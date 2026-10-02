@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <external-files-path name="omr_scan_photos" path="Pictures/omr_scans/" />
+    <cache-path name="omr_imports" path="omr_imports/" />
+</paths>

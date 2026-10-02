@@ -66,6 +66,30 @@ yarn-error.log
 # testing
 /coverage
 
+# Local editor settings
+.vscode/
+
+# Generated/local artifacts
+artifacts/
+*.apk
+*.aab
+*.db
+*.sqlite
+*.sqlite3
+
+# JVM crash logs
+hs_err_pid*.log
+replay_pid*.log
+
+# Inactive duplicate/backup projects
+/MobileAssessmentApp/
+/old_MobileAssessmentApp/
+
+# Environment secrets
+.env
+.env.*
+!.env.example
+
 # Yarn
 .yarn/*
 !.yarn/patches

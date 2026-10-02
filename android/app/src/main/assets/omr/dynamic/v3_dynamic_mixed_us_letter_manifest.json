@@ -1,0 +1,600 @@
+{
+  "contractVersion": "3.0",
+  "manifestVersion": 2,
+  "designSystem": {
+    "code": "SMART-DYNAMIC-ANSWER-SHEET",
+    "version": "1",
+    "nativePaperGeometry": true,
+    "sharedRules": [
+      "header_structure",
+      "typography",
+      "bubble_geometry",
+      "registration_marker_pattern",
+      "response_region_rules"
+    ]
+  },
+  "answerSheetUuid": "56d628da-d7fc-4faa-b018-3f740e048bf0",
+  "testAssignment": {
+    "testAssignmentId": 12001,
+    "assignmentUuid": "26b14ea2-4383-43f5-bb40-f60683ee46bb"
+  },
+  "paperSize": {
+    "code": "US_LETTER",
+    "widthPt": 612.0,
+    "heightPt": 792.0,
+    "orientation": "portrait"
+  },
+  "testVersionNumber": 1,
+  "totalQuestions": 12,
+  "totalPages": 2,
+  "manifestHash": "64f518c7fb2288c4dca23d5d7981b7e4edda1752cdac5d42a853f522f2a3f00a",
+  "requiredScannerVersion": "3.0.0-prototype.2",
+  "generatedAt": "2026-09-02T00:00:00Z",
+  "pages": [
+    {
+      "pageUuid": "047b5541-a98d-5636-9959-1eab07e14ad3",
+      "pageNumber": 1,
+      "totalPages": 2,
+      "template": {
+        "code": "OMR-US-LETTER-DYNAMIC-CTX-V3",
+        "version": "3",
+        "geometryHash": "60d76368207255c2a6ce4dc7df2f8f89e91b35ed9e73a355991b849930da79e3"
+      },
+      "qr": {
+        "payloadVersion": 3,
+        "payload": "{\"v\":3,\"as\":\"VtYo2tf8T6qwGD90DgSL8A\",\"pg\":\"BHtVQamNVjaZWR6rB-FK0w\",\"ta\":\"JrFOokODQ_W7QPYGg-5Guw\",\"pn\":1,\"pc\":2,\"tc\":\"OMR-US-LETTER-DYNAMIC-CTX-V3\",\"tv\":3,\"gh\":\"YNdjaCByVcKmzk3H3y-PiekbNe2ec6NVmRuEmTDaeeM\"}",
+        "payloadHash": "e92e2e819a2b6d2c23a460f55bc31520aa8d4a29009b7e0182a6b9c9649bca6b",
+        "errorCorrection": "M"
+      },
+      "coordinateSpace": {
+        "unit": "pt",
+        "origin": "pdf_bottom_left",
+        "width": 612.0,
+        "height": 792.0
+      },
+      "registrationMarkers": [
+        {
+          "markerId": "top_left",
+          "corner": "top_left",
+          "style": "hollow",
+          "rectangle": {
+            "x": 20.0,
+            "y": 757.0,
+            "width": 15.0,
+            "height": 15.0
+          }
+        },
+        {
+          "markerId": "top_right",
+          "corner": "top_right",
+          "style": "solid",
+          "rectangle": {
+            "x": 577.0,
+            "y": 757.0,
+            "width": 15.0,
+            "height": 15.0
+          }
+        },
+        {
+          "markerId": "bottom_right",
+          "corner": "bottom_right",
+          "style": "solid",
+          "rectangle": {
+            "x": 577.0,
+            "y": 20.0,
+            "width": 15.0,
+            "height": 15.0
+          }
+        },
+        {
+          "markerId": "bottom_left",
+          "corner": "bottom_left",
+          "style": "solid",
+          "rectangle": {
+            "x": 20.0,
+            "y": 20.0,
+            "width": 15.0,
+            "height": 15.0
+          }
+        }
+      ],
+      "registrationMarkerPattern": {
+        "orientationCorner": "top_left",
+        "orientationStyle": "hollow",
+        "locatorStyle": "solid"
+      },
+      "qrRectangle": {
+        "x": 498.0,
+        "y": 20.0,
+        "width": 72.0,
+        "height": 72.0
+      },
+      "regions": [
+        {
+          "regionUuid": "6ab6e5ec-6257-5292-af44-ec6a7e7389b3",
+          "templateRegionCode": "DYNAMIC_SLOT_01",
+          "questionId": 30001,
+          "questionUuid": "1dd4c493-013f-4251-9d87-ad9be9533298",
+          "testPartId": 21001,
+          "globalItemNumber": 1,
+          "partItemNumber": 1,
+          "questionType": "multiple_choice",
+          "regionType": "objective_bubbles",
+          "responseRegionSize": "none",
+          "expectedResponseCount": null,
+          "responseLineCount": null,
+          "rectangle": {
+            "x": 42.0,
+            "y": 569.0,
+            "width": 255.0,
+            "height": 34.0
+          },
+          "options": [
+            {
+              "key": "A",
+              "storedValue": "A",
+              "centerX": 124.0,
+              "centerY": 586.0
+            },
+            {
+              "key": "B",
+              "storedValue": "B",
+              "centerX": 160.0,
+              "centerY": 586.0
+            },
+            {
+              "key": "C",
+              "storedValue": "C",
+              "centerX": 196.0,
+              "centerY": 586.0
+            },
+            {
+              "key": "D",
+              "storedValue": "D",
+              "centerX": 232.0,
+              "centerY": 586.0
+            }
+          ],
+          "geometryHash": "eb675900454d5801ebbda55885b55991fdc042487245f0603264e93161d0ff70"
+        },
+        {
+          "regionUuid": "6fcbf7b0-26c0-5031-9bdd-b8352e75d60e",
+          "templateRegionCode": "DYNAMIC_SLOT_02",
+          "questionId": 30002,
+          "questionUuid": "2dd4c493-013f-4251-9d87-ad9be9533298",
+          "testPartId": 21001,
+          "globalItemNumber": 2,
+          "partItemNumber": 2,
+          "questionType": "multiple_choice",
+          "regionType": "objective_bubbles",
+          "responseRegionSize": "none",
+          "expectedResponseCount": null,
+          "responseLineCount": null,
+          "rectangle": {
+            "x": 42.0,
+            "y": 528.0,
+            "width": 255.0,
+            "height": 34.0
+          },
+          "options": [
+            {
+              "key": "A",
+              "storedValue": "A",
+              "centerX": 124.0,
+              "centerY": 545.0
+            },
+            {
+              "key": "B",
+              "storedValue": "B",
+              "centerX": 160.0,
+              "centerY": 545.0
+            },
+            {
+              "key": "C",
+              "storedValue": "C",
+              "centerX": 196.0,
+              "centerY": 545.0
+            },
+            {
+              "key": "D",
+              "storedValue": "D",
+              "centerX": 232.0,
+              "centerY": 545.0
+            }
+          ],
+          "geometryHash": "9f6fb4dc672ae8d07780131fda82eb0b3c70ef162c1666350cf1d2ef89ab1539"
+        },
+        {
+          "regionUuid": "f9a80b73-7d89-5a39-ad80-061af22f1380",
+          "templateRegionCode": "DYNAMIC_SLOT_03",
+          "questionId": 30003,
+          "questionUuid": "3dd4c493-013f-4251-9d87-ad9be9533298",
+          "testPartId": 21001,
+          "globalItemNumber": 3,
+          "partItemNumber": 3,
+          "questionType": "multiple_choice",
+          "regionType": "objective_bubbles",
+          "responseRegionSize": "none",
+          "expectedResponseCount": null,
+          "responseLineCount": null,
+          "rectangle": {
+            "x": 42.0,
+            "y": 487.0,
+            "width": 255.0,
+            "height": 34.0
+          },
+          "options": [
+            {
+              "key": "A",
+              "storedValue": "A",
+              "centerX": 124.0,
+              "centerY": 504.0
+            },
+            {
+              "key": "B",
+              "storedValue": "B",
+              "centerX": 160.0,
+              "centerY": 504.0
+            },
+            {
+              "key": "C",
+              "storedValue": "C",
+              "centerX": 196.0,
+              "centerY": 504.0
+            },
+            {
+              "key": "D",
+              "storedValue": "D",
+              "centerX": 232.0,
+              "centerY": 504.0
+            }
+          ],
+          "geometryHash": "f189555e4242886032d65b3d67f3ccce5879fdf26777008a2c3ebad5042be8ae"
+        },
+        {
+          "regionUuid": "1f9c711d-6d89-57c1-84bb-49cb4469c791",
+          "templateRegionCode": "DYNAMIC_SLOT_04",
+          "questionId": 30004,
+          "questionUuid": "4dd4c493-013f-4251-9d87-ad9be9533298",
+          "testPartId": 21001,
+          "globalItemNumber": 4,
+          "partItemNumber": 4,
+          "questionType": "multiple_choice",
+          "regionType": "objective_bubbles",
+          "responseRegionSize": "none",
+          "expectedResponseCount": null,
+          "responseLineCount": null,
+          "rectangle": {
+            "x": 42.0,
+            "y": 446.0,
+            "width": 255.0,
+            "height": 34.0
+          },
+          "options": [
+            {
+              "key": "A",
+              "storedValue": "A",
+              "centerX": 124.0,
+              "centerY": 463.0
+            },
+            {
+              "key": "B",
+              "storedValue": "B",
+              "centerX": 160.0,
+              "centerY": 463.0
+            },
+            {
+              "key": "C",
+              "storedValue": "C",
+              "centerX": 196.0,
+              "centerY": 463.0
+            },
+            {
+              "key": "D",
+              "storedValue": "D",
+              "centerX": 232.0,
+              "centerY": 463.0
+            }
+          ],
+          "geometryHash": "44818b4c2ad723b663ade5a0629cea0a0870a9bbeae16fdfd6ff26fb1ea7ab90"
+        },
+        {
+          "regionUuid": "8d5a550b-c5d4-586f-afc9-28f15542b38a",
+          "templateRegionCode": "DYNAMIC_SLOT_05",
+          "questionId": 30005,
+          "questionUuid": "5dd4c493-013f-4251-9d87-ad9be9533298",
+          "testPartId": 21002,
+          "globalItemNumber": 5,
+          "partItemNumber": 1,
+          "questionType": "true_false",
+          "regionType": "objective_bubbles",
+          "responseRegionSize": "none",
+          "expectedResponseCount": null,
+          "responseLineCount": null,
+          "rectangle": {
+            "x": 315.0,
+            "y": 569.0,
+            "width": 255.0,
+            "height": 34.0
+          },
+          "options": [
+            {
+              "key": "T",
+              "storedValue": "A",
+              "centerX": 397.0,
+              "centerY": 586.0
+            },
+            {
+              "key": "F",
+              "storedValue": "B",
+              "centerX": 433.0,
+              "centerY": 586.0
+            }
+          ],
+          "geometryHash": "51c23814116bf0605ac6ffcbd651991c43e7a458b00c604ed4919d8b7047627c"
+        },
+        {
+          "regionUuid": "38a17273-41cf-5e05-a9ac-16d65fc885cc",
+          "templateRegionCode": "DYNAMIC_SLOT_06",
+          "questionId": 30006,
+          "questionUuid": "6dd4c493-013f-4251-9d87-ad9be9533298",
+          "testPartId": 21002,
+          "globalItemNumber": 6,
+          "partItemNumber": 2,
+          "questionType": "true_false",
+          "regionType": "objective_bubbles",
+          "responseRegionSize": "none",
+          "expectedResponseCount": null,
+          "responseLineCount": null,
+          "rectangle": {
+            "x": 315.0,
+            "y": 528.0,
+            "width": 255.0,
+            "height": 34.0
+          },
+          "options": [
+            {
+              "key": "T",
+              "storedValue": "A",
+              "centerX": 397.0,
+              "centerY": 545.0
+            },
+            {
+              "key": "F",
+              "storedValue": "B",
+              "centerX": 433.0,
+              "centerY": 545.0
+            }
+          ],
+          "geometryHash": "76560343f80db3626865b996076184acea9a538016f0498c98e985a9d529b8d5"
+        },
+        {
+          "regionUuid": "d92732f8-6dfb-5af0-be50-a6b3105ac808",
+          "templateRegionCode": "DYNAMIC_SLOT_07",
+          "questionId": 30007,
+          "questionUuid": "7dd4c493-013f-4251-9d87-ad9be9533298",
+          "testPartId": 21002,
+          "globalItemNumber": 7,
+          "partItemNumber": 3,
+          "questionType": "true_false",
+          "regionType": "objective_bubbles",
+          "responseRegionSize": "none",
+          "expectedResponseCount": null,
+          "responseLineCount": null,
+          "rectangle": {
+            "x": 315.0,
+            "y": 487.0,
+            "width": 255.0,
+            "height": 34.0
+          },
+          "options": [
+            {
+              "key": "T",
+              "storedValue": "A",
+              "centerX": 397.0,
+              "centerY": 504.0
+            },
+            {
+              "key": "F",
+              "storedValue": "B",
+              "centerX": 433.0,
+              "centerY": 504.0
+            }
+          ],
+          "geometryHash": "9cc9f0a39c91f847a55612612e0e8b6726b0f3877b855539537cae748e26a756"
+        },
+        {
+          "regionUuid": "92db1792-d2c4-53f7-8656-c84fa5a7cad9",
+          "templateRegionCode": "DYNAMIC_SLOT_08",
+          "questionId": 30008,
+          "questionUuid": "8dd4c493-013f-4251-9d87-ad9be9533298",
+          "testPartId": 21003,
+          "globalItemNumber": 8,
+          "partItemNumber": 1,
+          "questionType": "identification",
+          "regionType": "written_response",
+          "responseRegionSize": "short",
+          "expectedResponseCount": null,
+          "responseLineCount": 1,
+          "rectangle": {
+            "x": 42.0,
+            "y": 370.0,
+            "width": 255.0,
+            "height": 42.0
+          },
+          "options": [],
+          "geometryHash": "396dae72ae00ee22f7fcb7affa3e4b5ea5048f3a4b4c2ad41d5baea4bbea7a2e"
+        },
+        {
+          "regionUuid": "0dde6782-c764-5c19-9dfa-8d5de1cc6198",
+          "templateRegionCode": "DYNAMIC_SLOT_09",
+          "questionId": 30009,
+          "questionUuid": "9dd4c493-013f-4251-9d87-ad9be9533298",
+          "testPartId": 21003,
+          "globalItemNumber": 9,
+          "partItemNumber": 2,
+          "questionType": "identification",
+          "regionType": "written_response",
+          "responseRegionSize": "short",
+          "expectedResponseCount": null,
+          "responseLineCount": 1,
+          "rectangle": {
+            "x": 42.0,
+            "y": 321.0,
+            "width": 255.0,
+            "height": 42.0
+          },
+          "options": [],
+          "geometryHash": "ae275ea8925fd7348a9ec98bb8e3506a90d7b3588df4cc5020404050d3a89d1c"
+        },
+        {
+          "regionUuid": "9cbb35e2-803c-58b6-b183-4fa0889017ff",
+          "templateRegionCode": "DYNAMIC_SLOT_10",
+          "questionId": 30010,
+          "questionUuid": "add4c493-013f-4251-9d87-ad9be9533298",
+          "testPartId": 21004,
+          "globalItemNumber": 10,
+          "partItemNumber": 1,
+          "questionType": "enumeration",
+          "regionType": "written_response",
+          "responseRegionSize": "medium",
+          "expectedResponseCount": 3,
+          "responseLineCount": 3,
+          "rectangle": {
+            "x": 315.0,
+            "y": 308.0,
+            "width": 255.0,
+            "height": 104.0
+          },
+          "options": [],
+          "geometryHash": "057a9f430b06993ba9da8ea1cc4c77c37532883e6e05cd169febf85f813c8deb"
+        }
+      ]
+    },
+    {
+      "pageUuid": "ad2c5687-344a-547c-9f6f-026d88fd11c5",
+      "pageNumber": 2,
+      "totalPages": 2,
+      "template": {
+        "code": "OMR-US-LETTER-DYNAMIC-CTX-V3",
+        "version": "3",
+        "geometryHash": "81fb6260c5cfb3eef69aec9453ed274e8025d62351c38fe078698ab497bbf556"
+      },
+      "qr": {
+        "payloadVersion": 3,
+        "payload": "{\"v\":3,\"as\":\"VtYo2tf8T6qwGD90DgSL8A\",\"pg\":\"rSxWhzRKVHyfbwJtiP0RxQ\",\"ta\":\"JrFOokODQ_W7QPYGg-5Guw\",\"pn\":2,\"pc\":2,\"tc\":\"OMR-US-LETTER-DYNAMIC-CTX-V3\",\"tv\":3,\"gh\":\"gftiYMXPs-72muyUU-0nToAl1iNRw4_geGmKtJe79VY\"}",
+        "payloadHash": "7d6779806d10894e56ad3e2363435ceca70e743ea73d5cd69f4cf9dacbff5fb5",
+        "errorCorrection": "M"
+      },
+      "coordinateSpace": {
+        "unit": "pt",
+        "origin": "pdf_bottom_left",
+        "width": 612.0,
+        "height": 792.0
+      },
+      "registrationMarkers": [
+        {
+          "markerId": "top_left",
+          "corner": "top_left",
+          "style": "hollow",
+          "rectangle": {
+            "x": 20.0,
+            "y": 757.0,
+            "width": 15.0,
+            "height": 15.0
+          }
+        },
+        {
+          "markerId": "top_right",
+          "corner": "top_right",
+          "style": "solid",
+          "rectangle": {
+            "x": 577.0,
+            "y": 757.0,
+            "width": 15.0,
+            "height": 15.0
+          }
+        },
+        {
+          "markerId": "bottom_right",
+          "corner": "bottom_right",
+          "style": "solid",
+          "rectangle": {
+            "x": 577.0,
+            "y": 20.0,
+            "width": 15.0,
+            "height": 15.0
+          }
+        },
+        {
+          "markerId": "bottom_left",
+          "corner": "bottom_left",
+          "style": "solid",
+          "rectangle": {
+            "x": 20.0,
+            "y": 20.0,
+            "width": 15.0,
+            "height": 15.0
+          }
+        }
+      ],
+      "registrationMarkerPattern": {
+        "orientationCorner": "top_left",
+        "orientationStyle": "hollow",
+        "locatorStyle": "solid"
+      },
+      "qrRectangle": {
+        "x": 498.0,
+        "y": 20.0,
+        "width": 72.0,
+        "height": 72.0
+      },
+      "regions": [
+        {
+          "regionUuid": "d954932f-482b-5cc2-b344-8bf03fb29d8c",
+          "templateRegionCode": "DYNAMIC_SLOT_01",
+          "questionId": 30011,
+          "questionUuid": "bdd4c493-013f-4251-9d87-ad9be9533298",
+          "testPartId": 21005,
+          "globalItemNumber": 11,
+          "partItemNumber": 1,
+          "questionType": "essay",
+          "regionType": "written_response",
+          "responseRegionSize": "long",
+          "expectedResponseCount": null,
+          "responseLineCount": 8,
+          "rectangle": {
+            "x": 42.0,
+            "y": 473.0,
+            "width": 528.0,
+            "height": 220.0
+          },
+          "options": [],
+          "geometryHash": "f3704e54f8a08a0019c00e665360331126f92eaeec3a63e01241d49b445cb5c2"
+        },
+        {
+          "regionUuid": "170e1703-9c55-5d2e-bdac-8183c86c935f",
+          "templateRegionCode": "DYNAMIC_SLOT_02",
+          "questionId": 30012,
+          "questionUuid": "cdd4c493-013f-4251-9d87-ad9be9533298",
+          "testPartId": 21005,
+          "globalItemNumber": 12,
+          "partItemNumber": 2,
+          "questionType": "essay",
+          "regionType": "written_response",
+          "responseRegionSize": "full_page",
+          "expectedResponseCount": null,
+          "responseLineCount": 15,
+          "rectangle": {
+            "x": 42.0,
+            "y": 102.0,
+            "width": 528.0,
+            "height": 364.0
+          },
+          "options": [],
+          "geometryHash": "0c42e544f76bca23a578f59aaa0ebf70336a2df085f7f4d40c07f79588ec7d59"
+        }
+      ]
+    }
+  ]
+}

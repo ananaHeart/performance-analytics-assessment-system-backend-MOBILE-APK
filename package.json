@@ -3,17 +3,22 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "android": "react-native run-android",
+    "android": "node scripts/adb-reverse-backend.js && react-native run-android",
     "ios": "react-native run-ios",
     "lint": "eslint .",
-    "start": "react-native start",
+    "postinstall": "node scripts/patch-quick-sqlite-android.js",
+    "start": "node scripts/adb-reverse-backend.js && react-native start",
     "test": "jest"
   },
   "dependencies": {
+    "@react-native/new-app-screen": "0.83.1",
+    "lucide-react-native": "^1.18.0",
     "react": "19.2.0",
     "react-native": "0.83.1",
-    "@react-native/new-app-screen": "0.83.1",
-    "react-native-safe-area-context": "^5.5.2"
+    "react-native-quick-sqlite": "^8.2.7",
+    "react-native-safe-area-context": "^5.6.2",
+    "react-native-svg": "^15.15.5",
+    "sha.js": "^2.4.12"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

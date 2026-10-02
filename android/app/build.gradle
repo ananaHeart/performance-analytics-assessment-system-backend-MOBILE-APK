@@ -59,6 +59,10 @@ react {
  */
 def enableProguardInReleaseBuilds = false
 
+// Opt in when building a standalone APK for the laptop's V3 backend.
+// Normal release builds retain their cloud configuration.
+def localV3Backend = providers.gradleProperty("localV3Backend").getOrElse("false").toBoolean()
+
 /**
  * The preferred build flavor of JavaScriptCore (JSC)
  *
@@ -82,8 +86,19 @@ android {
         applicationId "com.mobileassessmentapp"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode 2
+        versionName "1.1-scanner-test"
+        buildConfigField "boolean", "LOCAL_V3_BACKEND", localV3Backend.toString()
+        externalNativeBuild {
+            cmake {
+                arguments "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON"
+            }
+        }
+    }
+    packaging {
+        jniLibs {
+            useLegacyPackaging true
+        }
     }
     signingConfigs {
         debug {
@@ -110,6 +125,8 @@ android {
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
+    implementation("org.opencv:opencv:4.13.0")
+    implementation("com.google.zxing:core:3.5.4")
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")

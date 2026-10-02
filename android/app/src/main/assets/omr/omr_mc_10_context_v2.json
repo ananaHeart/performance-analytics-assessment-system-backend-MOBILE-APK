@@ -1,0 +1,99 @@
+{
+  "template_version": "OMR-A4-10-MC-CTX-V2",
+  "page_width_pt": 595.276,
+  "page_height_pt": 841.89,
+  "item_count": 10,
+  "question_type": "multiple_choice",
+  "items": [
+    {
+      "item_number": 1,
+      "options": [
+        {"option": "A", "center_x_pt": 79.0, "center_y_pt": 604.334, "radius_pt": 6.4},
+        {"option": "B", "center_x_pt": 103.0, "center_y_pt": 604.334, "radius_pt": 6.4},
+        {"option": "C", "center_x_pt": 127.0, "center_y_pt": 604.334, "radius_pt": 6.4},
+        {"option": "D", "center_x_pt": 151.0, "center_y_pt": 604.334, "radius_pt": 6.4}
+      ]
+    },
+    {
+      "item_number": 2,
+      "options": [
+        {"option": "A", "center_x_pt": 79.0, "center_y_pt": 571.223, "radius_pt": 6.4},
+        {"option": "B", "center_x_pt": 103.0, "center_y_pt": 571.223, "radius_pt": 6.4},
+        {"option": "C", "center_x_pt": 127.0, "center_y_pt": 571.223, "radius_pt": 6.4},
+        {"option": "D", "center_x_pt": 151.0, "center_y_pt": 571.223, "radius_pt": 6.4}
+      ]
+    },
+    {
+      "item_number": 3,
+      "options": [
+        {"option": "A", "center_x_pt": 79.0, "center_y_pt": 538.112, "radius_pt": 6.4},
+        {"option": "B", "center_x_pt": 103.0, "center_y_pt": 538.112, "radius_pt": 6.4},
+        {"option": "C", "center_x_pt": 127.0, "center_y_pt": 538.112, "radius_pt": 6.4},
+        {"option": "D", "center_x_pt": 151.0, "center_y_pt": 538.112, "radius_pt": 6.4}
+      ]
+    },
+    {
+      "item_number": 4,
+      "options": [
+        {"option": "A", "center_x_pt": 79.0, "center_y_pt": 505.001, "radius_pt": 6.4},
+        {"option": "B", "center_x_pt": 103.0, "center_y_pt": 505.001, "radius_pt": 6.4},
+        {"option": "C", "center_x_pt": 127.0, "center_y_pt": 505.001, "radius_pt": 6.4},
+        {"option": "D", "center_x_pt": 151.0, "center_y_pt": 505.001, "radius_pt": 6.4}
+      ]
+    },
+    {
+      "item_number": 5,
+      "options": [
+        {"option": "A", "center_x_pt": 79.0, "center_y_pt": 471.89, "radius_pt": 6.4},
+        {"option": "B", "center_x_pt": 103.0, "center_y_pt": 471.89, "radius_pt": 6.4},
+        {"option": "C", "center_x_pt": 127.0, "center_y_pt": 471.89, "radius_pt": 6.4},
+        {"option": "D", "center_x_pt": 151.0, "center_y_pt": 471.89, "radius_pt": 6.4}
+      ]
+    },
+    {
+      "item_number": 6,
+      "options": [
+        {"option": "A", "center_x_pt": 79.0, "center_y_pt": 438.778, "radius_pt": 6.4},
+        {"option": "B", "center_x_pt": 103.0, "center_y_pt": 438.778, "radius_pt": 6.4},
+        {"option": "C", "center_x_pt": 127.0, "center_y_pt": 438.778, "radius_pt": 6.4},
+        {"option": "D", "center_x_pt": 151.0, "center_y_pt": 438.778, "radius_pt": 6.4}
+      ]
+    },
+    {
+      "item_number": 7,
+      "options": [
+        {"option": "A", "center_x_pt": 79.0, "center_y_pt": 405.667, "radius_pt": 6.4},
+        {"option": "B", "center_x_pt": 103.0, "center_y_pt": 405.667, "radius_pt": 6.4},
+        {"option": "C", "center_x_pt": 127.0, "center_y_pt": 405.667, "radius_pt": 6.4},
+        {"option": "D", "center_x_pt": 151.0, "center_y_pt": 405.667, "radius_pt": 6.4}
+      ]
+    },
+    {
+      "item_number": 8,
+      "options": [
+        {"option": "A", "center_x_pt": 79.0, "center_y_pt": 372.556, "radius_pt": 6.4},
+        {"option": "B", "center_x_pt": 103.0, "center_y_pt": 372.556, "radius_pt": 6.4},
+        {"option": "C", "center_x_pt": 127.0, "center_y_pt": 372.556, "radius_pt": 6.4},
+        {"option": "D", "center_x_pt": 151.0, "center_y_pt": 372.556, "radius_pt": 6.4}
+      ]
+    },
+    {
+      "item_number": 9,
+      "options": [
+        {"option": "A", "center_x_pt": 79.0, "center_y_pt": 339.445, "radius_pt": 6.4},
+        {"option": "B", "center_x_pt": 103.0, "center_y_pt": 339.445, "radius_pt": 6.4},
+        {"option": "C", "center_x_pt": 127.0, "center_y_pt": 339.445, "radius_pt": 6.4},
+        {"option": "D", "center_x_pt": 151.0, "center_y_pt": 339.445, "radius_pt": 6.4}
+      ]
+    },
+    {
+      "item_number": 10,
+      "options": [
+        {"option": "A", "center_x_pt": 79.0, "center_y_pt": 306.334, "radius_pt": 6.4},
+        {"option": "B", "center_x_pt": 103.0, "center_y_pt": 306.334, "radius_pt": 6.4},
+        {"option": "C", "center_x_pt": 127.0, "center_y_pt": 306.334, "radius_pt": 6.4},
+        {"option": "D", "center_x_pt": 151.0, "center_y_pt": 306.334, "radius_pt": 6.4}
+      ]
+    }
+  ]
+}
