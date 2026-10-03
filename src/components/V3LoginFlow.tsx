@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { V3OfflineDiagnosticSnapshot } from '../database/v3/diagnosticRepository';
 import {
   requireV3TeacherLoginResult,
   requireV3TeacherSession,
+  V3AccountNotAllowedError,
   type V3AuthMfaChallenge,
   type V3AuthMfaMethod,
   type V3AuthSession,
@@ -20,6 +21,9 @@ import { LoginLoading } from './LoginLoading';
 interface V3LoginFlowProps {
   request: { email: string; password: string };
   onClose: () => void;
+  // Called instead of onClose when the account may not use the mobile app
+  // (e.g. a principal), so the login form can be cleared.
+  onAccountRejected?: () => void;
   onAuthenticated: (session: V3AuthSession, snapshot: V3OfflineDiagnosticSnapshot) => void;
   connectionAdapter?: V3DiagnosticsConnectionAdapter;
   baseUrl?: string;
@@ -28,6 +32,7 @@ interface V3LoginFlowProps {
 export const V3LoginFlow = ({
   request,
   onClose,
+  onAccountRejected = onClose,
   onAuthenticated,
   connectionAdapter = defaultV3DiagnosticsConnection,
   baseUrl = getDefaultV3BaseUrl(),
@@ -40,8 +45,18 @@ export const V3LoginFlow = ({
   const mounted = useRef(false);
   const inFlight = useRef(false);
   const session = useRef<V3AuthSession | null>(null);
+  // A ref, so a new callback from the parent does not restart the login effect.
+  const accountRejected = useRef(onAccountRejected);
+  accountRejected.current = onAccountRejected;
 
   const showError = useCallback((cause: unknown) => {
+    if (cause instanceof V3AccountNotAllowedError) {
+      session.current = null;
+      setChallenge(null);
+      Alert.alert(cause.title, cause.message, [{ text: 'OK' }]);
+      accountRejected.current();
+      return;
+    }
     if (cause instanceof V3SessionReauthenticationError) {
       session.current = null;
       setChallenge(null);

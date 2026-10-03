@@ -4,7 +4,6 @@ import { V3_API_BASE_URL } from '../../config/api';
 import { getV3OfflineDiagnosticSnapshot, type V3OfflineDiagnosticSnapshot } from '../../database/v3/diagnosticRepository';
 import {
   createV3AuthClient,
-  requireV3TeacherLoginResult,
   requireV3TeacherSession,
   type V3AuthLoginResult,
   type V3AuthMfaMethod,
@@ -68,20 +67,36 @@ const authClient = (baseUrl: string) =>
 
 const secureSession = createV3SecureSessionService();
 
+// A principal (or an inactive teacher) still gets a real server session from
+// a successful login. End it at once so no token is left behind on the
+// server, and never save it on the phone.
+const requireTeacherOrLogout = async (
+  baseUrl: string,
+  session: V3AuthSession,
+): Promise<V3AuthSession> => {
+  try {
+    return requireV3TeacherSession(session);
+  } catch (error) {
+    await authClient(baseUrl).logout(session.accessToken).catch(logoutError => {
+      console.log('V3 AUTH: Logout of a rejected account failed.', logoutError);
+    });
+    throw error;
+  }
+};
+
 export const defaultV3DiagnosticsConnection: V3DiagnosticsConnectionAdapter = {
   restore: () => secureSession.restore(),
   clearSession: () => secureSession.clear(),
   login: async input => {
-    const result = requireV3TeacherLoginResult(
-      await authClient(input.baseUrl).login(input.email, input.password),
-    );
-    if (result.kind === 'authenticated') {
-      await secureSession.save(input.baseUrl, result.session);
-    }
-    return result;
+    const result = await authClient(input.baseUrl).login(input.email, input.password);
+    if (result.kind === 'mfa_required') return result;
+    const session = await requireTeacherOrLogout(input.baseUrl, result.session);
+    await secureSession.save(input.baseUrl, session);
+    return { kind: 'authenticated', session };
   },
   verifyMfa: async input => {
-    const session = requireV3TeacherSession(
+    const session = await requireTeacherOrLogout(
+      input.baseUrl,
       await authClient(input.baseUrl).verifyMfa(
         input.challengeUuid,
         input.code,

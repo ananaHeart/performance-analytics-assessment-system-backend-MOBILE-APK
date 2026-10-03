@@ -131,6 +131,8 @@ const App = (): React.JSX.Element => {
     email: string;
     password: string;
   } | null>(null);
+  // Bumped to remount (and so empty) the login form after a rejected account.
+  const [loginFormKey, setLoginFormKey] = useState(0);
   const [omrScannerMode, setOmrScannerMode] = useState<'scan' | 'view'>('scan');
   const [saveFeedback, setSaveFeedback] = useState('');
   const [dataVersion, setDataVersion] = useState(0);
@@ -2087,7 +2089,7 @@ const App = (): React.JSX.Element => {
 
         {/* 1. LOGIN */}
         {!isLoggedIn && view === 'LOGIN' && (
-          <LoginScreen onLogin={handleLogin} />
+          <LoginScreen key={loginFormKey} onLogin={handleLogin} />
         )}
 
         <DynamicOmrScannerPrototype
@@ -2101,6 +2103,10 @@ const App = (): React.JSX.Element => {
             request={v3InitialLoginRequest}
             onAuthenticated={handleV3Authenticated}
             onClose={() => setV3InitialLoginRequest(null)}
+            onAccountRejected={() => {
+              setV3InitialLoginRequest(null);
+              setLoginFormKey(key => key + 1);
+            }}
           />
         ) : null}
 

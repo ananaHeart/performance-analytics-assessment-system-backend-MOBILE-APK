@@ -1,7 +1,9 @@
 import {
+  V3AccountNotAllowedError,
   V3AuthHttpError,
   createV3AuthClient,
   requireV3TeacherLoginResult,
+  requireV3TeacherSession,
   type V3AuthFetch,
   type V3AuthSession,
 } from '../src/services/v3/authClient';
@@ -157,12 +159,41 @@ describe('isolated V3 authentication client', () => {
     );
   });
 
+  const thrownBy = (action: () => unknown): unknown => {
+    try {
+      action();
+    } catch (error) {
+      return error;
+    }
+    throw new Error('Expected the action to throw.');
+  };
+
   test('rejects an authenticated principal before Mobile data is requested', () => {
-    expect(() =>
+    const error = thrownBy(() =>
       requireV3TeacherLoginResult({
         kind: 'authenticated',
         session: { ...SESSION_DATA, user: { ...USER, role: 'principal' } },
       }),
-    ).toThrow('available only to teacher accounts');
+    );
+    expect(error).toBeInstanceOf(V3AccountNotAllowedError);
+    expect(error).toMatchObject({
+      reason: 'not_teacher',
+      title: 'Teacher accounts only',
+      message:
+        'This mobile app is for teachers. Please sign in to the SMART web dashboard on a computer to use your principal account.',
+    });
+  });
+
+  test('rejects an inactive teacher with user wording', () => {
+    const error = thrownBy(() =>
+      requireV3TeacherSession({ ...SESSION_DATA, user: { ...USER, status: 'pending' } }),
+    );
+    expect(error).toBeInstanceOf(V3AccountNotAllowedError);
+    expect(error).toMatchObject({
+      reason: 'inactive',
+      title: 'Account not active yet',
+      message:
+        "Your teacher account is not active yet. Please wait for the principal's approval, or contact your principal.",
+    });
   });
 });

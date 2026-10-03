@@ -1,10 +1,14 @@
 import React from 'react';
-import { Text, TextInput } from 'react-native';
+import { Alert, Text, TextInput } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 import { LoginLoading } from '../src/components/LoginLoading';
 import { V3LoginFlow } from '../src/components/V3LoginFlow';
 import type { V3OfflineDiagnosticSnapshot } from '../src/database/v3/diagnosticRepository';
-import type { V3AuthLoginResult, V3AuthSession } from '../src/services/v3/authClient';
+import {
+  V3AccountNotAllowedError,
+  type V3AuthLoginResult,
+  type V3AuthSession,
+} from '../src/services/v3/authClient';
 import type { V3DiagnosticsConnectionAdapter } from '../src/services/v3/diagnosticsConnection';
 import { V3SessionReauthenticationError } from '../src/services/v3/secureSessionService';
 
@@ -182,6 +186,68 @@ describe('V3 login loading flow', () => {
     expectNoDiagnostics();
     expect(adapter.refresh).not.toHaveBeenCalled();
     expect(onAuthenticated).not.toHaveBeenCalled();
+  });
+
+  describe('accounts that may not use the mobile app', () => {
+    let alert: jest.SpyInstance;
+    let onAccountRejected: jest.Mock;
+
+    beforeEach(() => {
+      alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+      onAccountRejected = jest.fn();
+    });
+    afterEach(() => { alert.mockRestore(); });
+
+    const renderWithRejection = async () => {
+      await ReactTestRenderer.act(async () => {
+        renderer = ReactTestRenderer.create(
+          <V3LoginFlow request={REQUEST} connectionAdapter={adapter}
+            onAuthenticated={onAuthenticated} onClose={onClose}
+            onAccountRejected={onAccountRejected} />,
+        );
+      });
+    };
+    const expectFriendlyPopUp = () => {
+      expect(alert).toHaveBeenCalledTimes(1);
+      expect(alert).toHaveBeenCalledWith(
+        'Teacher accounts only',
+        'This mobile app is for teachers. Please sign in to the SMART web dashboard on a computer to use your principal account.',
+        [{ text: 'OK' }],
+      );
+      expect(onAccountRejected).toHaveBeenCalledTimes(1);
+      expect(onClose).not.toHaveBeenCalled();
+      expect(onAuthenticated).not.toHaveBeenCalled();
+      expect(adapter.refresh).not.toHaveBeenCalled();
+      expect(screenText()).not.toMatch(/teacher accounts|Unable to sign in/);
+    };
+
+    test('shows a friendly pop-up for a principal and returns to the login form', async () => {
+      adapter.login.mockRejectedValue(new V3AccountNotAllowedError('not_teacher'));
+      await renderWithRejection();
+      expectFriendlyPopUp();
+    });
+
+    test('shows the same pop-up when the role is only known after MFA', async () => {
+      adapter.login.mockResolvedValue(MFA);
+      adapter.verifyMfa.mockRejectedValue(new V3AccountNotAllowedError('not_teacher'));
+      await renderWithRejection();
+      await ReactTestRenderer.act(async () => { renderer!.root.findByType(TextInput).props.onChangeText('123456'); });
+      await ReactTestRenderer.act(async () => {
+        await renderer!.root.findByProps({ accessibilityLabel: 'Verify and sign in' }).props.onPress();
+      });
+      expectFriendlyPopUp();
+    });
+
+    test('falls back to onClose when no rejection handler is given', async () => {
+      adapter.login.mockRejectedValue(new V3AccountNotAllowedError('inactive'));
+      await renderFlow();
+      expect(alert).toHaveBeenCalledWith(
+        'Account not active yet',
+        "Your teacher account is not active yet. Please wait for the principal's approval, or contact your principal.",
+        [{ text: 'OK' }],
+      );
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
   });
 
   test('does not enter the app if the login flow closes before the download resolves', async () => {

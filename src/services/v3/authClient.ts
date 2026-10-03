@@ -41,14 +41,31 @@ export type V3AuthLoginResult =
   | { kind: 'authenticated'; session: V3AuthSession }
   | { kind: 'mfa_required'; challenge: V3AuthMfaChallenge };
 
+// Shown to the person signing in, so the title and message are user wording.
+export class V3AccountNotAllowedError extends Error {
+  readonly reason: 'not_teacher' | 'inactive';
+  readonly title: string;
+
+  constructor(reason: V3AccountNotAllowedError['reason']) {
+    super(
+      reason === 'not_teacher'
+        ? 'This mobile app is for teachers. Please sign in to the SMART web dashboard on a computer to use your principal account.'
+        : "Your teacher account is not active yet. Please wait for the principal's approval, or contact your principal.",
+    );
+    this.name = 'V3AccountNotAllowedError';
+    this.reason = reason;
+    this.title = reason === 'not_teacher' ? 'Teacher accounts only' : 'Account not active yet';
+  }
+}
+
 export const requireV3TeacherSession = (
   session: V3AuthSession,
 ): V3AuthSession => {
   if (session.user.role.toLowerCase() !== 'teacher') {
-    throw new Error('V3 Mobile data is available only to teacher accounts.');
+    throw new V3AccountNotAllowedError('not_teacher');
   }
   if (session.user.status.toLowerCase() !== 'active') {
-    throw new Error('The V3 teacher account is not active.');
+    throw new V3AccountNotAllowedError('inactive');
   }
   return session;
 };

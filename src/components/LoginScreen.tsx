@@ -8,7 +8,6 @@ import {
   StyleSheet
 } from 'react-native';
 import {Eye, GraduationCap} from 'lucide-react-native';
-import { testBackendConnection } from '../services/authService';
 import { LoginLoading } from './LoginLoading';
 
 interface LoginScreenProps {
@@ -44,14 +43,6 @@ export const LoginScreen = ({
     }
   };
 
-  const handleBackendTest = async () => {
-    const result = await testBackendConnection();
-    Alert.alert(
-      'Backend Connection Test',
-      `Backend URL: ${result.backendUrl}\nHTTP status: ${result.status}\nReachable: ${result.reachable}\nV3 ready: ${result.v3Ready}\nMessage: ${result.message}`,
-    );
-  };
-
   if (isSubmitting) return <LoginLoading />;
 
   return (
@@ -63,6 +54,11 @@ export const LoginScreen = ({
 
         <Text style={styles.title}>Performance Analytic Assessment System</Text>
         <Text style={styles.subtitle}>Mobile Teacher App</Text>
+
+        <View style={styles.notice}>
+          <Text style={styles.noticeText}>This mobile app is for teachers only.</Text>
+          <Text style={styles.noticeSubtext}>Principals, please use the SMART web dashboard.</Text>
+        </View>
 
         <View style={styles.form}>
           <Text style={styles.inputLabel}>Email or Username</Text>
@@ -106,11 +102,6 @@ export const LoginScreen = ({
           >
             <Text style={styles.buttonText}>{isSubmitting ? 'Logging in…' : 'Login'}</Text>
           </TouchableOpacity>
-
-          <TouchableOpacity style={styles.backendTestLink} onPress={handleBackendTest} activeOpacity={0.8}>
-            <Text style={styles.backendTestText}>Test Backend Readiness</Text>
-          </TouchableOpacity>
-
         </View>
       </View>
     </View>
@@ -151,9 +142,30 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
   },
-  form: { 
+  notice: {
+    marginTop: 16,
+    paddingVertical: 9,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+  },
+  noticeText: {
+    fontSize: 12,
+    color: '#475569',
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  noticeSubtext: {
+    marginTop: 2,
+    fontSize: 11,
+    color: '#64748B',
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  form: {
     width: '100%',
-    marginTop: 32,
+    marginTop: 24,
   },
   inputLabel: {
     fontSize: 12,
@@ -227,15 +239,5 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '800',
     fontSize: 14,
-  },
-  backendTestLink: {
-    alignSelf: 'center',
-    marginTop: 28,
-    paddingVertical: 6,
-  },
-  backendTestText: {
-    color: '#94A3B8',
-    fontSize: 11,
-    fontWeight: '700',
   },
 });

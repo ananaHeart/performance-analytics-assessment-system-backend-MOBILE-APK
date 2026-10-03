@@ -1,4 +1,4 @@
-import { API_BASE_URL, V3_API_BASE_URL } from '../config/api';
+import { API_BASE_URL } from '../config/api';
 
 export interface LoginRequest {
   email: string;
@@ -38,14 +38,6 @@ interface ApiResponse<T> {
   data?: T;
   errors?: Record<string, unknown> | null;
   timestamp?: string;
-}
-
-export interface BackendConnectionResult {
-  backendUrl: string;
-  reachable: boolean;
-  v3Ready: boolean;
-  status: number;
-  message: string;
 }
 
 export const loginTeacher = async (payload: LoginRequest): Promise<LoginResponse> => {
@@ -89,40 +81,4 @@ export const loginV2Teacher = async (payload: LoginRequest): Promise<V2LoginResp
   }
 
   return responseBody.data;
-};
-
-export const testBackendConnection = async (): Promise<BackendConnectionResult> => {
-  const testUrl = `${V3_API_BASE_URL}/api/v3/system/mobile-release-readiness`;
-  console.log('AUTH: Backend test URL:', testUrl);
-
-  try {
-    const response = await fetch(testUrl);
-    const responseBody = (await response.json().catch(() => ({}))) as ApiResponse<unknown>;
-    const readiness =
-      responseBody.data !== null &&
-      typeof responseBody.data === 'object' &&
-      !Array.isArray(responseBody.data)
-        ? (responseBody.data as Record<string, unknown>)
-        : null;
-
-    return {
-      backendUrl: V3_API_BASE_URL,
-      reachable: true,
-      v3Ready: Boolean(
-        response.ok &&
-          responseBody.success &&
-          readiness?.backendReady === true,
-      ),
-      status: response.status,
-      message: responseBody.message || `HTTP ${response.status}`,
-    };
-  } catch (error) {
-    return {
-      backendUrl: V3_API_BASE_URL,
-      reachable: false,
-      v3Ready: false,
-      status: 0,
-      message: error instanceof Error ? error.message : 'Unknown backend connection error.',
-    };
-  }
 };
