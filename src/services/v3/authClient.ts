@@ -49,7 +49,7 @@ export class V3AccountNotAllowedError extends Error {
   constructor(reason: V3AccountNotAllowedError['reason']) {
     super(
       reason === 'not_teacher'
-        ? 'This mobile app is for teachers. Please sign in to the SMART web dashboard on a computer to use your principal account.'
+        ? 'This mobile app is for teachers. Please sign in to the Marka Dashboard on a computer to use your principal account.'
         : "Your teacher account is not active yet. Please wait for the principal's approval, or contact your principal.",
     );
     this.name = 'V3AccountNotAllowedError';

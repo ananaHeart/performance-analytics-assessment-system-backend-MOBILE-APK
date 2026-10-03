@@ -52,12 +52,12 @@ export const LoginScreen = ({
           <GraduationCap size={30} color="#2DBE4F" strokeWidth={2.6} />
         </View>
 
-        <Text style={styles.title}>Performance Analytic Assessment System</Text>
-        <Text style={styles.subtitle}>Mobile Teacher App</Text>
+        <Text style={styles.title}>Marka Teacher</Text>
+        <Text style={styles.subtitle}>Scan, score, and see how every learner is doing.</Text>
 
         <View style={styles.notice}>
           <Text style={styles.noticeText}>This mobile app is for teachers only.</Text>
-          <Text style={styles.noticeSubtext}>Principals, please use the SMART web dashboard.</Text>
+          <Text style={styles.noticeSubtext}>Principals, please use the Marka Dashboard.</Text>
         </View>
 
         <View style={styles.form}>
@@ -129,8 +129,8 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   title: {
-    fontSize: 19,
-    lineHeight: 24,
+    fontSize: 26,
+    lineHeight: 32,
     fontWeight: '900',
     color: '#0F172A',
     textAlign: 'center',
