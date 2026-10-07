@@ -1,34 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Graduation cap (same lucide icon as the login screen), white on the green
-     ic_launcher_background. 24-unit icon scaled 2.5x into the centre of the
-     108dp adaptive-icon canvas, inside the 66dp safe zone. -->
+<!-- Marka mark (docs/branding/marka-mark.svg r1, the same master as the login screen),
+     green on the white ic_launcher_background. The 64-unit master is scaled so
+     the mark spans 40.3dp, centred in the 108dp adaptive-icon canvas
+     and inside the 66dp safe zone. Generated from the master: do not edit the
+     path data by hand. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
     <group
-        android:translateX="24"
-        android:translateY="24"
-        android:scaleX="2.5"
-        android:scaleY="2.5">
+        android:translateX="30.960"
+        android:translateY="30.960"
+        android:scaleX="0.7200"
+        android:scaleY="0.7200">
         <path
-            android:pathData="M21.42 10.922a1 1 0 0 0-.019-1.838L12.83 5.18a2 2 0 0 0-1.66 0L2.6 9.08a1 1 0 0 0 0 1.832l8.57 3.908a2 2 0 0 0 1.66 0z"
-            android:strokeColor="#FFFFFF"
-            android:strokeWidth="2"
-            android:strokeLineCap="round"
-            android:strokeLineJoin="round" />
+            android:pathData="M37.31 4 L15.35 4 C9.08 4 4 9.08 4 15.35 L4 48.65 C4 54.92 9.08 60 15.35 60 L48.65 60 C54.92 60 60 54.92 60 48.65 L60 30.68 C60 29.2 58.8 28.01 57.33 28.01 C55.85 28.01 54.66 29.2 54.66 30.68 L54.66 48.65 C54.66 51.97 51.97 54.66 48.65 54.66 L15.35 54.66 C12.03 54.66 9.34 51.97 9.34 48.65 L9.34 15.35 C9.34 12.03 12.03 9.34 15.35 9.34 L37.31 9.34 C38.78 9.34 39.98 8.14 39.98 6.67 C39.98 5.2 38.78 4 37.31 4 Z"
+            android:fillColor="#00B316" />
         <path
-            android:pathData="M22 10v6"
-            android:strokeColor="#FFFFFF"
-            android:strokeWidth="2"
-            android:strokeLineCap="round"
-            android:strokeLineJoin="round" />
-        <path
-            android:pathData="M6 12.5V16a6 3 0 0 0 12 0v-3.5"
-            android:strokeColor="#FFFFFF"
-            android:strokeWidth="2"
-            android:strokeLineCap="round"
-            android:strokeLineJoin="round" />
+            android:pathData="M31.63 34.71 C37.47 26.91 43.35 19.15 50.09 12.13 C52.06 10.07 54.74 8.18 57.57 9.87 C59.3 10.9 58.01 12.64 57.2 13.78 C50.77 22.83 44.79 32.41 39.25 42.01 C37.49 45.05 36.37 47.03 32.46 47.26 C29.87 47.42 27.85 46.13 26.37 44.02 C23.73 40.25 20.83 36.39 17.68 33.03 C15.98 31.21 15.03 28.87 17.34 26.98 C20.73 24.22 24.33 25.62 26.79 28.75 C28.3 30.67 30.04 32.73 31.63 34.71 Z"
+            android:fillColor="#00B316" />
     </group>
 </vector>

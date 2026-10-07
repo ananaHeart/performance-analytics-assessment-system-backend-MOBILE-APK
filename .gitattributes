@@ -1,0 +1,4 @@
+# Keep the Marka logo master byte-for-byte, so its recorded SHA-256 still
+# matches after checkout on Windows (core.autocrlf would otherwise rewrite it).
+docs/branding/marka-mark.svg -text
+docs/branding/marka-mark.manifest.json -text

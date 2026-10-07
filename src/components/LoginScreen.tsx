@@ -7,8 +7,9 @@ import {
   TouchableOpacity, 
   StyleSheet
 } from 'react-native';
-import {Eye, GraduationCap} from 'lucide-react-native';
+import {Eye} from 'lucide-react-native';
 import { LoginLoading } from './LoginLoading';
+import { MarkaMark } from './MarkaMark';
 
 interface LoginScreenProps {
   onLogin: (email: string, password: string) => void | Promise<void>;
@@ -49,7 +50,7 @@ export const LoginScreen = ({
     <View style={styles.container}>
       <View style={styles.content}>
         <View style={styles.logoCircle}>
-          <GraduationCap size={30} color="#2DBE4F" strokeWidth={2.6} />
+          <MarkaMark size={30} />
         </View>
 
         <Text style={styles.title}>Marka Teacher</Text>
