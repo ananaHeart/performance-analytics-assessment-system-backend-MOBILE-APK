@@ -53,12 +53,12 @@ export const LoginScreen = ({
           <MarkaMark size={30} />
         </View>
 
-        <Text style={styles.title}>Marka Teacher</Text>
+        <Text style={styles.title}>Marka</Text>
         <Text style={styles.subtitle}>Scan, score, and see how every learner is doing.</Text>
 
         <View style={styles.notice}>
           <Text style={styles.noticeText}>This mobile app is for teachers only.</Text>
-          <Text style={styles.noticeSubtext}>Principals, please use the Marka Dashboard.</Text>
+          <Text style={styles.noticeSubtext}>Principals, please use Marka on a computer.</Text>
         </View>
 
         <View style={styles.form}>

@@ -211,7 +211,7 @@ describe('V3 login loading flow', () => {
       expect(alert).toHaveBeenCalledTimes(1);
       expect(alert).toHaveBeenCalledWith(
         'Teacher accounts only',
-        'This mobile app is for teachers. Please sign in to the Marka Dashboard on a computer to use your principal account.',
+        'This mobile app is for teachers. Please log in to Marka on a computer to use your principal account.',
         [{ text: 'OK' }],
       );
       expect(onAccountRejected).toHaveBeenCalledTimes(1);
