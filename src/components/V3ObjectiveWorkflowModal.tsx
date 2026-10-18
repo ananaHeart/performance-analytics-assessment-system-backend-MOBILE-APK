@@ -78,6 +78,7 @@ import {
 } from '../services/v3/evaluationReferenceStore';
 import {computePreliminaryScore, type PreliminaryScore} from '../services/v3/preliminaryScore';
 import {V3ServerWakingNotice} from './V3ServerWakingNotice';
+import {V3StatusToast} from './V3StatusToast';
 
 const FIXED_MC_TEMPLATE_CODE = 'OMR-A4-10-MC-CTX-V2';
 const DYNAMIC_MINIMUM_QUESTIONS = 5;
@@ -256,31 +257,40 @@ const trueFalseLabel = (option: V3ManifestOptionCoordinate, index: number): stri
   return index === 0 ? 'T' : 'F';
 };
 
+// "Partial" until the result is sent: the score only becomes official on the web.
 const preliminaryLabel = (score: PreliminaryScore | undefined): string =>
   score
-    ? ` · Preliminary ${scoreText(score.earned)}/${scoreText(score.maximum)}`
-      + (score.pendingCount > 0 ? ' (partial)' : '')
+    ? ` · Preliminary ${scoreText(score.earned)}/${scoreText(score.maximum)} (partial)`
     : '';
+
+// Pinned in the screen header, so the running total stays in view while the
+// teacher scrolls through the items below.
+const HeaderScore = ({score}: {score: PreliminaryScore | null}) => {
+  if (!score) return null;
+  const total = `${scoreText(score.earned)}/${scoreText(score.maximum)}`;
+  return (
+    <View style={styles.headerScore} accessibilityLabel={`Partial score ${total}`}>
+      <Text style={styles.headerScoreValue}>{total}</Text>
+      <Text style={styles.headerScoreLabel}>partial</Text>
+    </View>
+  );
+};
 
 const PreliminaryScoreBanner = ({score}: {score: PreliminaryScore | null}) => {
   if (!score) return null;
-  const partial = score.pendingCount > 0;
+  const pending = score.pendingCount;
   return (
     <View style={styles.preliminaryBanner}>
       <View style={styles.preliminaryHeader}>
-        <Text style={styles.preliminaryLabel}>
-          {partial ? 'Preliminary score (partial)' : 'Preliminary score'}
-        </Text>
+        <Text style={styles.preliminaryLabel}>Preliminary score (partial)</Text>
         <Text style={styles.preliminaryValue}>
           {scoreText(score.earned)} / {scoreText(score.maximum)}
         </Text>
       </View>
       <Text style={styles.preliminaryHint}>
-        {partial
-          ? `${score.pendingCount} item(s) not counted yet: written answers still to score, pages `
-            + 'not scanned yet, or no answer key on this phone. '
-          : ''}
-        Shown on this phone only - the official score comes from the system after you send it.
+        {pending > 0 ? `${pending} item${pending === 1 ? '' : 's'} still to score. ` : ''}
+        Scored with the answer key on this phone. The same score is saved on the web when
+        you send it.
       </Text>
     </View>
   );
@@ -470,6 +480,18 @@ export const V3ObjectiveWorkflowModal = ({
   const [isBusy, setIsBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // What "Try again" re-runs. Tied to the exact error text it belongs to, so a
+  // later error without a retry never shows a stale button.
+  const [retry, setRetry] = useState<{error: string; run: () => void} | null>(null);
+  const showError = (text: string, run?: () => void) => {
+    setError(text);
+    setRetry(run ? {error: text, run} : null);
+  };
+  const dismissMessage = useCallback(() => setMessage(null), []);
+  const dismissError = useCallback(() => {
+    setError(null);
+    setRetry(null);
+  }, []);
   const [bulkSync, setBulkSync] = useState<{
     total: number;
     completed: number;
@@ -772,8 +794,15 @@ export const V3ObjectiveWorkflowModal = ({
         setWrittenScores({});
       }
     } catch (scanError) {
-      setError(scanError instanceof Error ? scanError.message : 'Unable to scan the answer sheet.');
-      setMessage(null);
+      if ((scanError as {code?: unknown} | null)?.code === 'OMR_SCAN_CANCELLED') {
+        setMessage('Scan cancelled.');
+      } else {
+        showError(
+          scanError instanceof Error ? scanError.message : 'Unable to scan the answer sheet.',
+          () => runScan(source),
+        );
+        setMessage(null);
+      }
     } finally {
       setIsBusy(false);
     }
@@ -795,12 +824,15 @@ export const V3ObjectiveWorkflowModal = ({
         testId: test.test_id,
         assignmentUuid: test.assignment_uuid,
       }, student, context, regions, nextScan);
-      setMessage('Saved on this phone. Use "Send Saved Result to Backend" below when you are ready.');
+      setMessage("Saved on this phone. Send it whenever you're ready.");
       setScan(null);
       refreshLocal();
       onChanged();
     } catch (queueError) {
-      setError(queueError instanceof Error ? queueError.message : 'Unable to save the V3 result on this phone.');
+      showError(
+        queueError instanceof Error ? queueError.message : 'Unable to save the result on this phone.',
+        () => queueRecord(student, nextScan),
+      );
     } finally {
       setIsBusy(false);
     }
@@ -810,7 +842,7 @@ export const V3ObjectiveWorkflowModal = ({
     if (!context) return;
     setIsBusy(true);
     setError(null);
-    setMessage('Saving the immutable operation before upload...');
+    setMessage('Preparing to send...');
     try {
       const record = nextScan
         ? queueV3ObjectiveScan({
@@ -820,14 +852,14 @@ export const V3ObjectiveWorkflowModal = ({
           }, student, context, regions, nextScan)
         : getV3ObjectiveOutbox(test.test_assignment_id, student.classListId);
       if (!record) throw new Error('No saved V3 operation is available for retry.');
-      setMessage('Uploading scan, detections, and teacher verification...');
+      setMessage('Sending to the web...');
       const result = await syncV3ObjectiveResult(
         V3_BASE_URL,
         session.accessToken,
         record,
       );
       setMessage(
-        `Official backend score: ${result.officialScore.totalScore}/${result.officialScore.maxScore} (${result.officialScore.percentage}%).`,
+        `Sent. Official score: ${result.officialScore.totalScore}/${result.officialScore.maxScore} (${result.officialScore.percentage}%).`,
       );
       setScan(null);
       refreshLocal();
@@ -837,8 +869,12 @@ export const V3ObjectiveWorkflowModal = ({
         onSessionInvalid();
         return;
       }
-      setError(syncError instanceof Error ? syncError.message : 'Unable to upload the V3 result.');
-      setMessage('The operation remains saved on this phone. Retry will use the same UUIDs and evidence.');
+      showError(
+        `${syncError instanceof Error ? syncError.message : 'Unable to send the result.'}\n`
+          + 'It is still saved on this phone - nothing was lost.',
+        () => syncRecord(student),
+      );
+      setMessage(null);
       refreshLocal();
       onChanged();
     } finally {
@@ -875,14 +911,17 @@ export const V3ObjectiveWorkflowModal = ({
         dynamicPages,
         writtenScores,
       );
-      setMessage('Saved on this phone. Use "Send Saved Result to Backend" below when you are ready.');
+      setMessage("Saved on this phone. Send it whenever you're ready.");
       setDynamicPages([]);
       setDynamicManifest(null);
       setWrittenScores({});
       refreshLocal();
       onChanged();
     } catch (queueError) {
-      setError(queueError instanceof Error ? queueError.message : 'Unable to save the V3 dynamic result on this phone.');
+      showError(
+        queueError instanceof Error ? queueError.message : 'Unable to save the result on this phone.',
+        () => queueDynamicRecord(student),
+      );
     } finally {
       setIsBusy(false);
     }
@@ -892,7 +931,7 @@ export const V3ObjectiveWorkflowModal = ({
     if (!context) return;
     setIsBusy(true);
     setError(null);
-    setMessage('Saving the immutable operation before upload...');
+    setMessage('Preparing to send...');
     try {
       const existing = getV3DynamicObjectiveOutbox(test.test_assignment_id, student.classListId);
       let record: V3DynamicObjectiveOutboxRecord;
@@ -918,14 +957,14 @@ export const V3ObjectiveWorkflowModal = ({
           writtenScores,
         );
       }
-      setMessage('Uploading pages, detections, evidence, and teacher verification...');
+      setMessage('Sending to the web...');
       const result = await syncV3DynamicObjectiveResult(
         V3_BASE_URL,
         session.accessToken,
         record,
       );
       setMessage(
-        `Official backend score: ${result.officialScore.totalScore}/${result.officialScore.maxScore} (${result.officialScore.percentage}%).`,
+        `Sent. Official score: ${result.officialScore.totalScore}/${result.officialScore.maxScore} (${result.officialScore.percentage}%).`,
       );
       setDynamicPages([]);
       setDynamicManifest(null);
@@ -937,8 +976,12 @@ export const V3ObjectiveWorkflowModal = ({
         onSessionInvalid();
         return;
       }
-      setError(syncError instanceof Error ? syncError.message : 'Unable to upload the V3 dynamic result.');
-      setMessage('The operation remains saved on this phone. Retry will use the same UUIDs and evidence.');
+      showError(
+        `${syncError instanceof Error ? syncError.message : 'Unable to send the result.'}\n`
+          + 'It is still saved on this phone - nothing was lost.',
+        () => syncDynamicRecord(student),
+      );
+      setMessage(null);
       refreshLocal();
       onChanged();
     } finally {
@@ -1028,6 +1071,9 @@ export const V3ObjectiveWorkflowModal = ({
             }],
       }));
     }
+    // The summary card lists every failure; don't also leave the last one as a pop-up.
+    dismissError();
+    setMessage(null);
   };
 
   const selectNextStudent = () => {
@@ -1139,11 +1185,14 @@ export const V3ObjectiveWorkflowModal = ({
     try {
       updateV3DynamicWrittenScores(editing.record.resultUuid, editing.scores);
       setEditing(null);
-      setMessage('Changes saved on this phone. Send the result when you are ready.');
+      setMessage("Changes saved on this phone. Send it whenever you're ready.");
       refreshLocal();
       onChanged();
     } catch (editError) {
-      setError(editError instanceof Error ? editError.message : 'Unable to save the changes.');
+      showError(
+        editError instanceof Error ? editError.message : 'Unable to save the changes.',
+        () => saveEditedScores(),
+      );
     } finally {
       setIsBusy(false);
     }
@@ -1170,6 +1219,22 @@ export const V3ObjectiveWorkflowModal = ({
       ))
     : false;
 
+  // Shown over the top of every screen here, so a notice or an error is seen
+  // wherever the teacher has scrolled.
+  const statusOverlay = (
+    <View style={styles.statusOverlay} pointerEvents="box-none">
+      <V3ServerWakingNotice />
+      <V3StatusToast
+        message={message}
+        error={error}
+        busy={isBusy}
+        onRetry={retry && retry.error === error ? retry.run : null}
+        onDismissMessage={dismissMessage}
+        onDismissError={dismissError}
+      />
+    </View>
+  );
+
   return (
     <>
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
@@ -1194,6 +1259,7 @@ export const V3ObjectiveWorkflowModal = ({
           {isBusy ? <ActivityIndicator color="#20B94B" /> : <ScanLine size={22} color="#20B94B" />}
         </View>
 
+        <View style={styles.body}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           {eligibilityIssue ? (
             <View style={styles.blocker}>
@@ -1314,10 +1380,9 @@ export const V3ObjectiveWorkflowModal = ({
             );
           })}
 
-          <V3ServerWakingNotice />
-          {message ? <Text style={styles.message}>{message}</Text> : null}
-          {error ? <Text style={styles.error}>{error}</Text> : null}
         </ScrollView>
+        {statusOverlay}
+        </View>
 
         {selected && selected.operationStage && !selected.officialScore ? (
           <View style={styles.stickyFooter}>
@@ -1410,16 +1475,18 @@ export const V3ObjectiveWorkflowModal = ({
             <Text style={styles.title}>Review & Verify</Text>
             <Text style={styles.subtitle}>{selected ? studentName(selected) : ''}</Text>
           </View>
+          <HeaderScore score={dynamicPages.length > 0 ? reviewPreliminary : null} />
           {isBusy ? <ActivityIndicator color="#20B94B" /> : null}
         </View>
 
+        <View style={styles.body}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           {scan ? (
             <View>
               <Text style={styles.sectionTitle}>Teacher verification</Text>
               <Text style={styles.verificationHint}>
-                Confirm this matches what's actually shaded on the paper - it is not the official
-                score. Grading against the answer key happens after you send the result.
+                Confirm these match what's shaded on the paper. A misread mark can only be fixed
+                by rescanning. The score appears after you send the result.
               </Text>
               <Image source={{uri: scan.annotatedImageUri}} style={styles.preview} resizeMode="contain" />
               {scan.detections.map(detection => (
@@ -1454,10 +1521,10 @@ export const V3ObjectiveWorkflowModal = ({
           {dynamicPages.length > 0 ? (
             <View>
               <PreliminaryScoreBanner score={reviewPreliminary} />
-              <Text style={styles.sectionTitle}>Captured locally (dynamic mixed-type sheet)</Text>
+              <Text style={styles.sectionTitle}>Scanned answer sheet</Text>
               <Text style={styles.blockerText}>
-                Nothing is sent to the backend yet - this stays on the phone until you tap
-                "Send Saved Result to Backend" below the list after accepting it.
+                Not sent yet. After you tap "Accept and Save Result", it stays on this phone
+                until you send it from the student list.
               </Text>
 
               {dynamicTotalPages !== null && dynamicTotalPages > 1 ? (
@@ -1489,9 +1556,8 @@ export const V3ObjectiveWorkflowModal = ({
                 <>
                   <Text style={styles.reviewSubheading}>Objective answers (read-only)</Text>
                   <Text style={styles.verificationHint}>
-                    Confirm this matches what's actually shaded on the paper. A misread mark can
-                    only be fixed by rescanning the page. The official score is computed by the
-                    system after you send the result.
+                    Confirm these match what's shaded on the paper. A misread mark can only be
+                    fixed by rescanning the page.
                   </Text>
                 </>
               ) : null}
@@ -1556,9 +1622,9 @@ export const V3ObjectiveWorkflowModal = ({
                     </Text>
                   </View>
                   <Text style={styles.scoringHint}>
-                    The points you enter here (Right/Wrong, partial points, or a rubric score for
-                    essays with a rubric) ARE the actual score for each item - recorded exactly as
-                    entered and counted in the official grade. Double-check each one before saving.
+                    The points you enter here (Right/Wrong, partial points, or a rubric score) are
+                    the student's score for each item, saved on the web exactly as entered.
+                    Double-check each one before saving.
                   </Text>
                 </>
               ) : null}
@@ -1618,10 +1684,9 @@ export const V3ObjectiveWorkflowModal = ({
             </View>
           ) : null}
 
-          <V3ServerWakingNotice />
-          {message ? <Text style={styles.message}>{message}</Text> : null}
-          {error ? <Text style={styles.error}>{error}</Text> : null}
         </ScrollView>
+        {statusOverlay}
+        </View>
 
         {isDynamicTemplate && dynamicPages.length > 0 && !isDynamicCaptureComplete ? (
           <View style={styles.stickyFooter}>
@@ -1667,9 +1732,11 @@ export const V3ObjectiveWorkflowModal = ({
             <Text style={styles.title}>Edit Saved Scores</Text>
             <Text style={styles.subtitle}>{selected ? studentName(selected) : ''}</Text>
           </View>
+          <HeaderScore score={editingPreliminary} />
           {isBusy ? <ActivityIndicator color="#20B94B" /> : null}
         </View>
 
+        <View style={styles.body}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <PreliminaryScoreBanner score={editingPreliminary} />
           <Text style={styles.verificationHint}>
@@ -1696,10 +1763,9 @@ export const V3ObjectiveWorkflowModal = ({
                 }))}
               />
             ))}
-          <V3ServerWakingNotice />
-          {message ? <Text style={styles.message}>{message}</Text> : null}
-          {error ? <Text style={styles.error}>{error}</Text> : null}
         </ScrollView>
+        {statusOverlay}
+        </View>
 
         <View style={styles.stickyFooter}>
           {!editingComplete ? (
@@ -1841,6 +1907,9 @@ const styles = StyleSheet.create({
   itemNumber: {width: 48, fontWeight: '900', color: '#17261B'},
   detectedAnswer: {width: 70, fontSize: 16, fontWeight: '900', color: '#16863A'},
   detectionStatus: {flex: 1, fontSize: 12, fontWeight: '700', color: '#64748B', textTransform: 'capitalize'},
-  message: {marginTop: 14, padding: 12, backgroundColor: '#E9F9EE', color: '#166534', borderRadius: 8, fontWeight: '800', lineHeight: 18},
-  error: {marginTop: 10, padding: 12, backgroundColor: '#FFF1F0', color: '#B42318', borderRadius: 8, fontWeight: '800', lineHeight: 18},
+  body: {flex: 1},
+  statusOverlay: {position: 'absolute', top: 0, left: 14, right: 14},
+  headerScore: {alignItems: 'flex-end', marginRight: 6},
+  headerScoreValue: {fontSize: 18, fontWeight: '900', color: '#16863A'},
+  headerScoreLabel: {fontSize: 11, fontWeight: '800', color: '#64748B', textTransform: 'uppercase'},
 });

@@ -156,7 +156,13 @@ export const syncV3DynamicObjectiveResult = async (
 
     if (current.stage === 'detections_uploaded') {
       if (current.expectedRevision == null) {
-        throw new Error('The detection acknowledgement did not provide a result revision.');
+        // An assessment with only written items (no MC/TF) uploads no
+        // detections, and the detection acknowledgement is where the revision
+        // normally comes from. Read it from the result instead - this also lets
+        // results saved before this fix continue without a rescan.
+        const readback = await objectiveClient.getResult(current.resultUuid);
+        updateV3DynamicObjectiveOutbox(current.resultUuid, {expectedRevision: readback.revision});
+        reload();
       }
       // Frozen, not regenerated: the backend's idempotency check requires a
       // retried request under the same operationUuid to be byte-for-byte
