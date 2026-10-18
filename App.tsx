@@ -31,6 +31,7 @@ import { downloadV2SyncData, uploadV2UnsyncedResults } from './src/services/v2Sy
 
 // 2. COMPONENT IMPORTS
 import { LoginScreen } from './src/components/LoginScreen';
+import { LoginLoading } from './src/components/LoginLoading';
 import { ClassList, TestList } from './src/components/NavigationLists';
 import { CheckingGrid } from './src/components/CheckingGrid';
 import { AnalyticsView } from './src/components/AnalyticsView';
@@ -172,6 +173,9 @@ const AppContent = (): React.JSX.Element => {
   const refreshInProgressRef = useRef(false);
   // Set when a download fails for lack of a connection; cleared by the next one that works.
   const [isOffline, setIsOffline] = useState(false);
+  // While a saved login is being restored at startup, show the loading screen
+  // instead of flashing the login form for a moment before Classes appears.
+  const [isRestoringSession, setIsRestoringSession] = useState(__DEV__ || V3_DIRECT_LOGIN);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [teacher, setTeacher] = useState<AuthenticatedTeacher | null>(null);
   const [v1SessionAvailable, setV1SessionAvailable] = useState(false);
@@ -371,6 +375,9 @@ const AppContent = (): React.JSX.Element => {
       })
       .catch(error => {
         console.log('V3 AUTH: Startup session restoration was unavailable.', error);
+      })
+      .finally(() => {
+        if (active) setIsRestoringSession(false);
       });
 
     return () => {
@@ -2111,7 +2118,7 @@ const AppContent = (): React.JSX.Element => {
 
       {/* 1. LOGIN */}
       {!isLoggedIn && view === 'LOGIN' && (
-        <LoginScreen key={loginFormKey} onLogin={handleLogin} />
+        isRestoringSession ? <LoginLoading /> : <LoginScreen key={loginFormKey} onLogin={handleLogin} />
       )}
 
       <DynamicOmrScannerPrototype

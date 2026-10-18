@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.os.SystemClock
 import android.util.Base64
+import android.util.Log
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.BinaryBitmap
 import com.google.zxing.DecodeHintType
@@ -35,6 +36,7 @@ import java.util.UUID
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 
 data class DynamicOmrSheetIdentity(
@@ -95,7 +97,11 @@ data class DynamicScanQuality(
 )
 
 data class DynamicScanTimings(
+  // Reading the photo file, and the page-straightening pre-pass before QR decode.
+  val decodeMs: Long,
+  val prepassMs: Long,
   val qrDecodeMs: Long,
+  val qrAttempts: String,
   val alignmentMs: Long,
   val analysisMs: Long,
   val totalMs: Long,
@@ -138,6 +144,7 @@ object DynamicOmrDetector {
   private const val LOCAL_DARKNESS_DELTA = 22.0
   private const val MAX_CENTER_SNAP_DISTANCE = 28.0
   private const val MAX_INPUT_DIMENSION = 2600.0
+  private const val TIMING_LOG_TAG = "MarkaScan"
   private const val MAX_QR_ROI_DIMENSION = 1400.0
   // A tighter, higher-resolution fallback crop. The printed QR footer is a small
   // corner of the full page; a 55%-of-frame search crop keeps enough margin for
@@ -169,6 +176,12 @@ object DynamicOmrDetector {
   // page" rather than some other object/shadow edge in the shot.
   private const val DOCUMENT_QUAD_MIN_AREA_FRACTION = 0.25
   private const val DOCUMENT_SHADOW_BLUR_SIGMA = 31.0
+  // The pre-pass's two slowest steps run on small copies of the photo: finding
+  // the page outline (corners are scaled back up) and estimating the shadow
+  // background (a blur that wide is just as accurate at low resolution). The
+  // straightened, shadow-corrected page itself stays full resolution.
+  private const val DOCUMENT_DETECTION_MAX_DIMENSION = 1200.0
+  private const val SHADOW_ESTIMATE_MAX_DIMENSION = 800.0
 
   private val manifestAssets = mapOf(
     "OMR-A4-DYNAMIC-CTX-V3" to "omr/dynamic/v3_dynamic_mixed_a4_manifest.json",
@@ -235,6 +248,9 @@ object DynamicOmrDetector {
     val raw: String,
     val json: JSONObject,
     val rotationDegreesClockwise: Int,
+    // Every decode attempt up to the one that worked, with its time, e.g.
+    // "p1 r0 x1 zxing 120ms, p1 r0 x1 opencv 640ms, p1 r0 x2 zxing 310ms ok".
+    val attempts: String,
   )
 
   private data class QrCandidate(
@@ -292,6 +308,8 @@ object DynamicOmrDetector {
 
     val loadedFromDisk = Imgcodecs.imread(imageFile.absolutePath, Imgcodecs.IMREAD_COLOR)
     require(!loadedFromDisk.empty()) { "The captured image could not be decoded." }
+    val decodeMs = SystemClock.elapsedRealtime() - totalStartedAt
+    val prepassStartedAt = SystemClock.elapsedRealtime()
     // Document-scanner-style pre-pass, run once before anything else touches the
     // photo: find the page's own outer edge against whatever it was photographed
     // on, warp it flat to fill the frame, and flatten shadows/uneven lighting.
@@ -302,6 +320,7 @@ object DynamicOmrDetector {
     // photo untouched if no confident page boundary is found, so this can only
     // ever help, never regress a photo that already decodes fine as-is.
     val decoded = runCatching { straightenDocumentIfFound(loadedFromDisk) }.getOrDefault(loadedFromDisk)
+    val prepassMs = SystemClock.elapsedRealtime() - prepassStartedAt
 
     var source: Mat? = null
     var oriented: Mat? = null
@@ -508,6 +527,13 @@ object DynamicOmrDetector {
         val analysisMs = SystemClock.elapsedRealtime() - analysisStartedAt
         val quality = buildScanQuality(inputQuality, pageGeometryQuality)
         val totalMs = SystemClock.elapsedRealtime() - totalStartedAt
+        // Readable with `adb logcat -s MarkaScan`, release builds included.
+        Log.i(
+          TIMING_LOG_TAG,
+          "photo=${loadedFromDisk.cols()}x${loadedFromDisk.rows()} pageFound=${decoded !== loadedFromDisk} " +
+            "decodeMs=$decodeMs prepassMs=$prepassMs qrMs=$qrDecodeMs alignmentMs=$alignmentMs " +
+            "analysisMs=$analysisMs totalMs=$totalMs",
+        )
         return DynamicOmrScanResult(
           scannerVersion = SCANNER_VERSION,
           manifestHash = manifest.manifestHash,
@@ -528,7 +554,10 @@ object DynamicOmrDetector {
           writtenEvidence = writtenEvidence,
           quality = quality,
           timings = DynamicScanTimings(
+            decodeMs = decodeMs,
+            prepassMs = prepassMs,
             qrDecodeMs = qrDecodeMs,
+            qrAttempts = decodedQr.attempts,
             alignmentMs = alignmentMs,
             analysisMs = analysisMs,
             totalMs = totalMs,
@@ -744,50 +773,69 @@ object DynamicOmrDetector {
       QrSearchPass(cropFraction = TIGHT_QR_CROP_FRACTION, maxDimension = MAX_QR_ROI_DIMENSION_TIGHT),
     )
 
-    passes.forEach { pass ->
-      val cropWidth = max(1, (source.cols() * pass.cropFraction).roundToInt())
-      val cropHeight = max(1, (source.rows() * pass.cropFraction).roundToInt())
-      val candidates = listOf(
-        QrCandidate(
-          Rect(source.cols() - cropWidth, source.rows() - cropHeight, cropWidth, cropHeight),
-          0,
-        ),
-        QrCandidate(Rect(0, source.rows() - cropHeight, cropWidth, cropHeight), 270),
-        QrCandidate(Rect(0, 0, cropWidth, cropHeight), 180),
-        QrCandidate(Rect(source.cols() - cropWidth, 0, cropWidth, cropHeight), 90),
-      )
+    val attempts = StringBuilder()
+    // ZXing first, at every crop, corner and size; OpenCV's slower multi-step
+    // fallback only if ZXing finds nothing anywhere. The attempts and the accept
+    // check are the same as trying both decoders on each image in turn - only the
+    // order differs. On a real 12 MP photo ZXing read the QR at 3x in under 0.1 s,
+    // after OpenCV had spent 2+ s failing on the 1x and 2x copies first.
+    val decoders: List<Pair<String, (Mat) -> String?>> = listOf(
+      "zxing" to ::decodeQrWithZxing,
+      "opencv" to ::decodeQrWithOpenCv,
+    )
+    decoders.forEach { (decoderName, decode) ->
+      passes.forEachIndexed { passIndex, pass ->
+        val cropWidth = max(1, (source.cols() * pass.cropFraction).roundToInt())
+        val cropHeight = max(1, (source.rows() * pass.cropFraction).roundToInt())
+        val candidates = listOf(
+          QrCandidate(
+            Rect(source.cols() - cropWidth, source.rows() - cropHeight, cropWidth, cropHeight),
+            0,
+          ),
+          QrCandidate(Rect(0, source.rows() - cropHeight, cropWidth, cropHeight), 270),
+          QrCandidate(Rect(0, 0, cropWidth, cropHeight), 180),
+          QrCandidate(Rect(source.cols() - cropWidth, 0, cropWidth, cropHeight), 90),
+        )
 
-      candidates.forEach { candidate ->
-        val crop = source.submat(candidate.rectangle)
-        val capped = resizeForQr(crop, pass.maxDimension)
-        val gray = Mat()
-        val upscaled2x = Mat()
-        val upscaled3x = Mat()
-        try {
-          Imgproc.cvtColor(capped, gray, Imgproc.COLOR_BGR2GRAY)
-          // Matches the validated Python reference (scan_dynamic_answer_sheet.py's
-          // decode_qr_text_from_footer): try the crop as captured, then 2x and 3x
-          // cubic-upscaled grayscale versions. A small printed QR can be too fine for
-          // the decoder's internal sampling grid even when well within any resolution
-          // cap - explicit upscaling, not just avoiding downscale, is what recovers it.
-          Imgproc.resize(gray, upscaled2x, Size(), 2.0, 2.0, Imgproc.INTER_CUBIC)
-          Imgproc.resize(gray, upscaled3x, Size(), 3.0, 3.0, Imgproc.INTER_CUBIC)
-
-          for (variant in listOf(capped, upscaled2x, upscaled3x)) {
-            val raw = decodeQrWithZxing(variant) ?: decodeQrWithOpenCv(variant)
-            if (!raw.isNullOrBlank()) {
-              val parsed = runCatching { JSONObject(raw) }.getOrNull()
-              if (parsed != null && parsed.optInt("v") == 3 && parsed.has("tc")) {
-                return DecodedQr(raw, parsed, candidate.rotationDegreesClockwise)
+        candidates.forEach { candidate ->
+          val crop = source.submat(candidate.rectangle)
+          val capped = resizeForQr(crop, pass.maxDimension)
+          val gray = Mat()
+          try {
+            // Matches the validated Python reference (scan_dynamic_answer_sheet.py's
+            // decode_qr_text_from_footer): try the crop as captured, then 2x and 3x
+            // cubic-upscaled grayscale versions. A small printed QR can be too fine for
+            // the decoder's internal sampling grid even when well within any resolution
+            // cap - explicit upscaling, not just avoiding downscale, is what recovers it.
+            // Each upscale is built only once the smaller size has failed.
+            for (factor in 1..3) {
+              val variant = if (factor == 1) {
+                capped
+              } else {
+                if (gray.empty()) Imgproc.cvtColor(capped, gray, Imgproc.COLOR_BGR2GRAY)
+                Mat().also { upscaled ->
+                  Imgproc.resize(gray, upscaled, Size(), factor.toDouble(), factor.toDouble(), Imgproc.INTER_CUBIC)
+                }
+              }
+              try {
+                val label = "p${passIndex + 1} r${candidate.rotationDegreesClockwise} x$factor $decoderName"
+                val raw = timedAttempt(attempts, label) { decode(variant) }
+                if (!raw.isNullOrBlank()) {
+                  val parsed = runCatching { JSONObject(raw) }.getOrNull()
+                  if (parsed != null && parsed.optInt("v") == 3 && parsed.has("tc")) {
+                    attempts.append(" ok")
+                    return DecodedQr(raw, parsed, candidate.rotationDegreesClockwise, attempts.toString())
+                  }
+                }
+              } finally {
+                if (variant !== capped) variant.release()
               }
             }
+          } finally {
+            gray.release()
+            capped.release()
+            crop.release()
           }
-        } finally {
-          upscaled3x.release()
-          upscaled2x.release()
-          gray.release()
-          capped.release()
-          crop.release()
         }
       }
     }
@@ -803,6 +851,14 @@ object DynamicOmrDetector {
       "Dynamic page QR could not be decoded. $qualityHint " +
         "Focus ${round1(quality.focusScore)}, brightness ${round1(quality.meanBrightness)}.",
     )
+  }
+
+  private inline fun timedAttempt(log: StringBuilder, label: String, decode: () -> String?): String? {
+    val startedAt = SystemClock.elapsedRealtime()
+    val result = decode()
+    if (log.isNotEmpty()) log.append(", ")
+    log.append(label).append(' ').append(SystemClock.elapsedRealtime() - startedAt).append("ms")
+    return result
   }
 
   private fun resizeForQr(image: Mat, maxDimension: Double): Mat {
@@ -1122,12 +1178,34 @@ object DynamicOmrDetector {
    * Returns the original Mat, untouched, if no confident page boundary is found.
    */
   private fun straightenDocumentIfFound(image: Mat): Mat {
-    val quad = findDocumentQuad(image) ?: return image
+    val quad = findDocumentQuadOnSmallCopy(image) ?: return image
     val warped = warpToQuad(image, quad)
     try {
       return removeShadowsPerChannel(warped)
     } finally {
       warped.release()
+    }
+  }
+
+  /**
+   * findDocumentQuad on a copy at most DOCUMENT_DETECTION_MAX_DIMENSION px on its
+   * long side, with the corners scaled back to the full photo. The outline only
+   * has to be roughly right: the corner markers do the precise alignment later.
+   */
+  private fun findDocumentQuadOnSmallCopy(image: Mat): Array<Point>? {
+    val largestDimension = max(image.cols(), image.rows()).toDouble()
+    if (largestDimension <= DOCUMENT_DETECTION_MAX_DIMENSION) return findDocumentQuad(image)
+    val scale = DOCUMENT_DETECTION_MAX_DIMENSION / largestDimension
+    val small = Mat()
+    try {
+      Imgproc.resize(image, small, Size(image.cols() * scale, image.rows() * scale), 0.0, 0.0, Imgproc.INTER_AREA)
+      val maxX = (image.cols() - 1).toDouble()
+      val maxY = (image.rows() - 1).toDouble()
+      return findDocumentQuad(small)
+        ?.map { corner -> Point((corner.x / scale).coerceIn(0.0, maxX), (corner.y / scale).coerceIn(0.0, maxY)) }
+        ?.toTypedArray()
+    } finally {
+      small.release()
     }
   }
 
@@ -1233,16 +1311,27 @@ object DynamicOmrDetector {
   private fun removeShadowsPerChannel(image: Mat): Mat {
     val channels = ArrayList<Mat>()
     val corrected = ArrayList<Mat>()
+    val scale = min(1.0, SHADOW_ESTIMATE_MAX_DIMENSION / max(image.cols(), image.rows()).toDouble())
     try {
       Core.split(image, channels)
       channels.forEach { channel ->
+        val small = Mat()
+        val smallBackground = Mat()
         val background = Mat()
         val normalized = Mat()
         try {
-          Imgproc.GaussianBlur(channel, background, Size(0.0, 0.0), DOCUMENT_SHADOW_BLUR_SIGMA)
+          if (scale < 1.0) {
+            Imgproc.resize(channel, small, Size(channel.cols() * scale, channel.rows() * scale), 0.0, 0.0, Imgproc.INTER_AREA)
+            Imgproc.GaussianBlur(small, smallBackground, Size(0.0, 0.0), DOCUMENT_SHADOW_BLUR_SIGMA * scale)
+            Imgproc.resize(smallBackground, background, channel.size(), 0.0, 0.0, Imgproc.INTER_LINEAR)
+          } else {
+            Imgproc.GaussianBlur(channel, background, Size(0.0, 0.0), DOCUMENT_SHADOW_BLUR_SIGMA)
+          }
           Core.divide(channel, background, normalized, 255.0)
           corrected += normalized
         } finally {
+          small.release()
+          smallBackground.release()
           background.release()
         }
       }

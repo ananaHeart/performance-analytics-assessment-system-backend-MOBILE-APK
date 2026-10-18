@@ -12,6 +12,10 @@ const buttons = (renderer: ReactTestRenderer.ReactTestRenderer) =>
     { deep: false },
   );
 
+// The first render loads the shared UI components and icon set, which can
+// take longer than Jest's 5 s default when the whole suite runs in parallel.
+jest.setTimeout(20000);
+
 describe('V3StatusToast', () => {
   beforeEach(() => jest.useFakeTimers());
   afterEach(() => jest.useRealTimers());

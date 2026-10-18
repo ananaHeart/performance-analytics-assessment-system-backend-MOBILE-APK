@@ -77,6 +77,8 @@ import {
 import {computePreliminaryScore, type PreliminaryScore} from '../services/v3/preliminaryScore';
 import {V3ServerWakingNotice} from './V3ServerWakingNotice';
 import {V3StatusToast} from './V3StatusToast';
+import {ScanningOverlay} from './ScanningOverlay';
+import {subscribeScanPhotoReady} from '../native/scanPhotoEvents';
 import {theme} from '../theme/tokens';
 import {
   Badge,
@@ -496,6 +498,8 @@ export const V3ObjectiveWorkflowModal = ({
     dirty: boolean;
   } | null>(null);
   const [isBusy, setIsBusy] = useState(false);
+  // The photo being checked right now, shown under the scan animation.
+  const [scanPhotoUri, setScanPhotoUri] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // What "Try again" re-runs. Tied to the exact error text it belongs to, so a
@@ -737,6 +741,7 @@ export const V3ObjectiveWorkflowModal = ({
     setIsBusy(true);
     setError(null);
     setMessage(null);
+    const stopWatchingPhoto = subscribeScanPhotoReady(setScanPhotoUri);
     try {
       if (isDynamicTemplate) {
         const startedAt = Date.now();
@@ -767,26 +772,24 @@ export const V3ObjectiveWorkflowModal = ({
         const nextDynamicScan = source === 'camera'
           ? await captureDynamicOmrSheet(options)
           : await chooseDynamicOmrImage(options);
-        if (__DEV__) {
-          // Temporary scan-speed diagnostic. The detector's own stage timings
-          // don't cover its full-resolution pre-pass (page-edge detection,
-          // warp, shadow removal) - that shows up only as detectorOtherMs.
-          // nativeRoundTripMs also includes time spent in the camera app or
-          // photo picker, so compare it against detectorTotalMs, not alone.
-          const {qrDecodeMs, alignmentMs, analysisMs, totalMs} = nextDynamicScan.timings;
-          console.log('[V3 Scan Timing]', JSON.stringify({
-            source,
-            pageNumber: nextDynamicScan.identity.pageNumber,
-            manifestSource,
-            manifestMs: manifestReadyAt - startedAt,
-            nativeRoundTripMs: Date.now() - manifestReadyAt,
-            detectorTotalMs: totalMs,
-            detectorQrDecodeMs: qrDecodeMs,
-            detectorAlignmentMs: alignmentMs,
-            detectorAnalysisMs: analysisMs,
-            detectorOtherMs: totalMs - qrDecodeMs - alignmentMs - analysisMs,
-          }));
-        }
+        // Scan-speed log, release builds included (`adb logcat | grep MarkaScan`).
+        // nativeRoundTripMs also covers time spent in the camera app or photo
+        // picker, so compare it against detectorTotalMs, not on its own.
+        const timings = nextDynamicScan.timings;
+        console.log('[MarkaScan]', JSON.stringify({
+          source,
+          pageNumber: nextDynamicScan.identity.pageNumber,
+          manifestSource,
+          manifestMs: manifestReadyAt - startedAt,
+          nativeRoundTripMs: Date.now() - manifestReadyAt,
+          detectorTotalMs: timings.totalMs,
+          decodeMs: timings.decodeMs,
+          prepassMs: timings.prepassMs,
+          qrDecodeMs: timings.qrDecodeMs,
+          qrAttempts: timings.qrAttempts,
+          alignmentMs: timings.alignmentMs,
+          analysisMs: timings.analysisMs,
+        }));
         setDynamicPages(prev => {
           // A rescan of an already-captured page replaces that page's entry
           // rather than duplicating it; a genuinely new page is appended.
@@ -822,6 +825,8 @@ export const V3ObjectiveWorkflowModal = ({
         setMessage(null);
       }
     } finally {
+      stopWatchingPhoto();
+      setScanPhotoUri(null);
       setIsBusy(false);
     }
   };
@@ -1291,6 +1296,7 @@ export const V3ObjectiveWorkflowModal = ({
 
   return (
     <>
+    <ScanningOverlay photoUri={visible ? scanPhotoUri : null} />
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <SafeAreaView style={styles.safeArea}>
         <ScreenHeader

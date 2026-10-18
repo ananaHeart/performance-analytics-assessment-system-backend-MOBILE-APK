@@ -77,7 +77,12 @@ export interface DynamicScanQuality {
 }
 
 export interface DynamicScanTimings {
+  // Missing from scanner builds before 2026-10-18.
+  decodeMs?: number;
+  prepassMs?: number;
   qrDecodeMs: number;
+  // Each QR decode attempt with its time, up to the one that worked.
+  qrAttempts?: string;
   alignmentMs: number;
   analysisMs: number;
   totalMs: number;

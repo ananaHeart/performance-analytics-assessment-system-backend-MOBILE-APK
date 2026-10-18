@@ -5,7 +5,9 @@ import android.content.ClipData
 import android.content.Intent
 import android.net.Uri
 import android.os.Environment
+import android.os.SystemClock
 import android.provider.MediaStore
+import android.util.Log
 import androidx.core.content.FileProvider
 import com.facebook.react.bridge.ActivityEventListener
 import com.facebook.react.bridge.Arguments
@@ -264,11 +266,15 @@ class OmrScannerModule(
 
   private fun processPendingScan(pending: PendingScan) {
     executor.execute {
+      val startedAt = SystemClock.elapsedRealtime()
+      var detectStartedAt = startedAt
       try {
         if (!pending.imageFile.exists() || pending.imageFile.length() == 0L) {
           throw IllegalStateException("The camera did not create a readable image.")
         }
         awaitCompleteJpeg(pending.imageFile)
+        notifyPhotoReady(pending.imageFile)
+        detectStartedAt = SystemClock.elapsedRealtime()
 
         val result = if (pending.dynamicMode) {
           DynamicOmrDetector.detect(
@@ -287,16 +293,42 @@ class OmrScannerModule(
             expectedTestId = pending.expectedTestId,
           ).toWritableMap()
         }
+        logScanTime(pending, startedAt, detectStartedAt, "ok")
         reactContext.runOnUiQueueThread {
           pendingScan = null
           pending.promise.resolve(result)
         }
       } catch (error: Exception) {
+        logScanTime(pending, startedAt, detectStartedAt, "failed: ${error.message}")
         reactContext.runOnUiQueueThread {
           pendingScan = null
           pending.promise.reject("OMR_DETECTION_FAILED", error.message, error)
         }
       }
+    }
+  }
+
+  // Readable with `adb logcat -s MarkaScan`, release builds included.
+  private fun logScanTime(pending: PendingScan, startedAt: Long, detectStartedAt: Long, outcome: String) {
+    val now = SystemClock.elapsedRealtime()
+    Log.i(
+      "MarkaScan",
+      "${if (pending.dynamicMode) "dynamic" else "fixed"} fileWaitMs=${detectStartedAt - startedAt} " +
+        "checkMs=${now - detectStartedAt} photoBytes=${pending.imageFile.length()} $outcome",
+    )
+  }
+
+  /**
+   * Tells the app the photo is saved and about to be checked, so the scan
+   * screen can show it while detection runs. Display only: a failure here
+   * must never affect the scan itself.
+   */
+  private fun notifyPhotoReady(imageFile: File) {
+    runCatching {
+      reactContext.emitDeviceEvent(
+        "OmrScanPhotoReady",
+        Arguments.createMap().apply { putString("uri", Uri.fromFile(imageFile).toString()) },
+      )
     }
   }
 
@@ -445,7 +477,10 @@ private fun DynamicOmrScanResult.toWritableMap(): WritableMap = Arguments.create
     })
   })
   putMap("timings", Arguments.createMap().apply {
+    putDouble("decodeMs", timings.decodeMs.toDouble())
+    putDouble("prepassMs", timings.prepassMs.toDouble())
     putDouble("qrDecodeMs", timings.qrDecodeMs.toDouble())
+    putString("qrAttempts", timings.qrAttempts)
     putDouble("alignmentMs", timings.alignmentMs.toDouble())
     putDouble("analysisMs", timings.analysisMs.toDouble())
     putDouble("totalMs", timings.totalMs.toDouble())

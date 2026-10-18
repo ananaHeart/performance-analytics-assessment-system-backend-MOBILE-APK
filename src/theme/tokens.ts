@@ -34,6 +34,9 @@ const colors = {
   shadow: '#000000',
   // The photo previews' letterbox behind a scanned page.
   imageBackdrop: '#e2e8f0',
+  // The "Reading the answer sheet" screen shown while a photo is checked.
+  scanBackdrop: 'rgba(15, 23, 42, 0.95)',
+  scanPhotoDim: 'rgba(15, 23, 42, 0.25)',
 } as const;
 
 export interface StatusColors {
