@@ -1,26 +1,24 @@
 import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Modal,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {
   Camera,
-  CheckCircle2,
-  ChevronLeft,
+  CircleCheck,
+  CloudUpload,
   Image as ImageIcon,
+  Minus,
+  Plus,
   RefreshCw,
-  ScanLine,
   Search,
-  X,
   XCircle,
 } from 'lucide-react-native';
 
@@ -79,6 +77,22 @@ import {
 import {computePreliminaryScore, type PreliminaryScore} from '../services/v3/preliminaryScore';
 import {V3ServerWakingNotice} from './V3ServerWakingNotice';
 import {V3StatusToast} from './V3StatusToast';
+import {theme} from '../theme/tokens';
+import {
+  Badge,
+  Banner,
+  Button,
+  Card,
+  EmptyState,
+  FooterRow,
+  IconButton,
+  ListRow,
+  ProgressBar,
+  ScreenHeader,
+  SearchField,
+  StickyFooter,
+  useDialog,
+} from './ui';
 
 const FIXED_MC_TEMPLATE_CODE = 'OMR-A4-10-MC-CTX-V2';
 const DYNAMIC_MINIMUM_QUESTIONS = 5;
@@ -151,13 +165,13 @@ const CriterionScoreStepper = ({
   };
   return (
     <View style={styles.criterionStepperRow}>
-      <TouchableOpacity
-        style={[styles.criterionStepperButton, (disabled || value === 0) && styles.criterionStepperButtonDisabled]}
+      <IconButton
+        icon={Minus}
+        accessibilityLabel="One point less"
+        style={styles.stepperButton}
         onPress={() => adjust(-1)}
         disabled={disabled || value === 0}
-      >
-        <Text style={styles.criterionStepperButtonText}>−</Text>
-      </TouchableOpacity>
+      />
       <TextInput
         style={[styles.criterionScoreInput, disabled && styles.inputDisabled]}
         value={inputValue}
@@ -166,15 +180,16 @@ const CriterionScoreStepper = ({
         editable={!disabled}
         keyboardType="decimal-pad"
         selectTextOnFocus
+        accessibilityLabel={`Points, out of ${scoreText(maximum)}`}
       />
       <Text style={styles.criterionMaxText}>/ {scoreText(maximum)}</Text>
-      <TouchableOpacity
-        style={[styles.criterionStepperButton, (disabled || value === maximum) && styles.criterionStepperButtonDisabled]}
+      <IconButton
+        icon={Plus}
+        accessibilityLabel="One point more"
+        style={styles.stepperButton}
         onPress={() => adjust(1)}
         disabled={disabled || value === maximum}
-      >
-        <Text style={styles.criterionStepperButtonText}>+</Text>
-      </TouchableOpacity>
+      />
     </View>
   );
 };
@@ -268,19 +283,14 @@ const preliminaryLabel = (score: PreliminaryScore | undefined): string =>
 const HeaderScore = ({score}: {score: PreliminaryScore | null}) => {
   if (!score) return null;
   const total = `${scoreText(score.earned)}/${scoreText(score.maximum)}`;
-  return (
-    <View style={styles.headerScore} accessibilityLabel={`Partial score ${total}`}>
-      <Text style={styles.headerScoreValue}>{total}</Text>
-      <Text style={styles.headerScoreLabel}>partial</Text>
-    </View>
-  );
+  return <Badge label={`${total} partial`} tone="success" accessibilityLabel={`Partial score ${total}`} />;
 };
 
 const PreliminaryScoreBanner = ({score}: {score: PreliminaryScore | null}) => {
   if (!score) return null;
   const pending = score.pendingCount;
   return (
-    <View style={styles.preliminaryBanner}>
+    <Banner tone="success" icon={null} style={styles.sectionSpacing}>
       <View style={styles.preliminaryHeader}>
         <Text style={styles.preliminaryLabel}>Preliminary score (partial)</Text>
         <Text style={styles.preliminaryValue}>
@@ -292,7 +302,7 @@ const PreliminaryScoreBanner = ({score}: {score: PreliminaryScore | null}) => {
         Scored with the answer key on this phone. The same score is saved on the web when
         you send it.
       </Text>
-    </View>
+    </Banner>
   );
 };
 
@@ -343,14 +353,19 @@ const WrittenScoringCard = ({
     : 0;
 
   return (
-    <View style={styles.writtenEvidenceCard}>
-      <View style={styles.objectiveReviewHeader}>
+    <Card style={styles.sectionSpacing}>
+      <View style={styles.itemHeader}>
         <Text style={styles.itemNumber}>Q{itemNumber}</Text>
-        <Text style={styles.writtenEvidenceType}>
+        <Text style={styles.itemMeta}>
           {questionType}{maximumPoints != null ? ` · ${scoreText(maximumPoints)} pt` : ''}
         </Text>
       </View>
-      <Image source={{uri: imageUri}} style={styles.writtenEvidenceImage} resizeMode="contain" />
+      <Image
+        source={{uri: imageUri}}
+        style={styles.writtenEvidenceImage}
+        resizeMode="contain"
+        accessibilityLabel={`Student's written answer for question ${itemNumber}`}
+      />
       {acceptedAnswers.length > 0 ? (
         <View style={styles.acceptedAnswersBox}>
           <Text style={styles.acceptedAnswersLabel}>
@@ -365,7 +380,7 @@ const WrittenScoringCard = ({
       ) : null}
       {rubric ? (
         <View style={styles.rubricList}>
-          <View style={styles.objectiveReviewHeader}>
+          <View style={styles.itemHeader}>
             <Text style={styles.rubricTitle}>{rubric.name}</Text>
             <Text style={styles.rubricTotal}>
               {scoreText(rubricTotal)} / {scoreText(rubricMaximum)}
@@ -398,28 +413,30 @@ const WrittenScoringCard = ({
       ) : (
         <>
           <View style={styles.scoreButtonRow}>
-            <TouchableOpacity
-              style={[styles.scoreButton, styles.scoreButtonWrong, isWrong && styles.scoreButtonWrongActive]}
+            <Button
+              label="Wrong"
+              icon={XCircle}
+              variant={isWrong ? 'dangerOutline' : 'secondary'}
+              style={[styles.scoreButton, isWrong && styles.scoreButtonWrongActive]}
               onPress={() => onChange(
                 maximumPoints == null ? {mode: 'manual', decision: 'incorrect'} : {mode: 'points', points: 0},
               )}
               disabled={disabled}
-            >
-              <XCircle size={18} color={isWrong ? '#FFFFFF' : '#B42318'} strokeWidth={2.4} />
-              <Text style={[styles.scoreButtonText, isWrong && styles.scoreButtonTextActive]}>Wrong</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.scoreButton, styles.scoreButtonRight, isRight && styles.scoreButtonRightActive]}
+              accessibilityLabel={`Question ${itemNumber}: Wrong${isWrong ? ', selected' : ''}`}
+            />
+            <Button
+              label="Right"
+              icon={CircleCheck}
+              variant={isRight ? 'primary' : 'secondary'}
+              style={styles.scoreButton}
               onPress={() => onChange(
                 maximumPoints == null
                   ? {mode: 'manual', decision: 'correct'}
                   : {mode: 'points', points: maximumPoints},
               )}
               disabled={disabled}
-            >
-              <CheckCircle2 size={18} color={isRight ? '#FFFFFF' : '#16863A'} strokeWidth={2.4} />
-              <Text style={[styles.scoreButtonText, isRight && styles.scoreButtonTextActive]}>Right</Text>
-            </TouchableOpacity>
+              accessibilityLabel={`Question ${itemNumber}: Right${isRight ? ', selected' : ''}`}
+            />
           </View>
           {maximumPoints != null && maximumPoints > 1 ? (
             <View style={styles.partialPointsRow}>
@@ -434,7 +451,7 @@ const WrittenScoringCard = ({
           ) : null}
         </>
       )}
-    </View>
+    </Card>
   );
 };
 
@@ -447,6 +464,7 @@ export const V3ObjectiveWorkflowModal = ({
   onChanged,
   onSessionInvalid,
 }: Props): React.JSX.Element => {
+  const dialog = useDialog();
   const [students, setStudents] = useState<V3ObjectiveStudent[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selected, setSelected] = useState<V3ObjectiveStudent | null>(null);
@@ -1006,31 +1024,27 @@ export const V3ObjectiveWorkflowModal = ({
       setError('This result has already started uploading, so it can no longer be discarded on the phone. Send it again to finish.');
       return;
     }
-    Alert.alert(
-      'Discard saved scan?',
-      `This throws away ${studentName(student)}'s saved scan on this phone so you can rescan from the start. This cannot be undone.`,
-      [
-        {text: 'Cancel', style: 'cancel'},
-        {
-          text: 'Discard',
-          style: 'destructive',
-          onPress: async () => {
-            if (isDynamicTemplate) {
-              deleteV3DynamicObjectiveOutbox(test.test_assignment_id, student.classListId);
-            } else {
-              deleteV3ObjectiveOutbox(test.test_assignment_id, student.classListId);
-            }
-            setScan(null);
-            setDynamicPages([]);
-            setDynamicManifest(null);
-            setWrittenScores({});
-            setMessage(null);
-            setError(null);
-            refreshLocal();
-          },
-        },
-      ],
-    );
+    dialog.confirm({
+      title: 'Discard saved scan?',
+      message: `This throws away ${studentName(student)}'s saved scan on this phone so you can rescan from the start. This cannot be undone.`,
+      cancelLabel: 'Cancel',
+      confirmLabel: 'Discard',
+      destructive: true,
+      onConfirm: () => {
+        if (isDynamicTemplate) {
+          deleteV3DynamicObjectiveOutbox(test.test_assignment_id, student.classListId);
+        } else {
+          deleteV3ObjectiveOutbox(test.test_assignment_id, student.classListId);
+        }
+        setScan(null);
+        setDynamicPages([]);
+        setDynamicManifest(null);
+        setWrittenScores({});
+        setMessage(null);
+        setError(null);
+        refreshLocal();
+      },
+    });
   };
 
   /**
@@ -1114,26 +1128,22 @@ export const V3ObjectiveWorkflowModal = ({
    * tap once confirmed.
    */
   const requestCloseReview = (afterDiscard?: () => void) => {
-    Alert.alert(
-      'Discard this scan?',
-      'This scan has not been saved yet. Leaving now discards it and you will need to rescan.',
-      [
-        {text: 'Keep Reviewing', style: 'cancel'},
-        {
-          text: 'Discard',
-          style: 'destructive',
-          onPress: () => {
-            setScan(null);
-            setDynamicPages([]);
-            setDynamicManifest(null);
-            setWrittenScores({});
-            setError(null);
-            setMessage(null);
-            afterDiscard?.();
-          },
-        },
-      ],
-    );
+    dialog.confirm({
+      title: 'Discard this scan?',
+      message: 'This scan has not been saved yet. Leaving now discards it and you will need to rescan.',
+      cancelLabel: 'Keep Reviewing',
+      confirmLabel: 'Discard',
+      destructive: true,
+      onConfirm: () => {
+        setScan(null);
+        setDynamicPages([]);
+        setDynamicManifest(null);
+        setWrittenScores({});
+        setError(null);
+        setMessage(null);
+        afterDiscard?.();
+      },
+    });
   };
 
   // The selected student's saved result that's still waiting for its official
@@ -1169,14 +1179,14 @@ export const V3ObjectiveWorkflowModal = ({
       setEditing(null);
       return;
     }
-    Alert.alert(
-      'Discard your changes?',
-      'The saved result stays exactly as it was before you opened it.',
-      [
-        {text: 'Keep Editing', style: 'cancel'},
-        {text: 'Discard Changes', style: 'destructive', onPress: () => setEditing(null)},
-      ],
-    );
+    dialog.confirm({
+      title: 'Discard your changes?',
+      message: 'The saved result stays exactly as it was before you opened it.',
+      cancelLabel: 'Keep Editing',
+      confirmLabel: 'Discard Changes',
+      destructive: true,
+      onConfirm: () => setEditing(null),
+    });
   };
   const saveEditedScores = async () => {
     if (!editing) return;
@@ -1223,7 +1233,7 @@ export const V3ObjectiveWorkflowModal = ({
   // wherever the teacher has scrolled.
   const statusOverlay = (
     <View style={styles.statusOverlay} pointerEvents="box-none">
-      <V3ServerWakingNotice />
+      <V3ServerWakingNotice style={styles.wakingNotice} />
       <V3StatusToast
         message={message}
         error={error}
@@ -1235,66 +1245,113 @@ export const V3ObjectiveWorkflowModal = ({
     </View>
   );
 
+  const studentStatus = (student: V3ObjectiveStudent): {text: string; color: string} => {
+    if (student.officialScore) {
+      return {
+        text: `Official ${student.officialScore.totalScore}/${student.officialScore.maxScore}`,
+        color: theme.colors.primary,
+      };
+    }
+    if (student.operationStage) {
+      const stage = student.operationStage.replaceAll('_', ' ');
+      return {
+        text: `Saved: ${stage.charAt(0).toUpperCase()}${stage.slice(1)}${preliminaryLabel(
+          savedPreliminaryByClassListId.get(student.classListId),
+        )}`,
+        color: theme.status.saved.text,
+      };
+    }
+    return {text: 'Not checked', color: theme.colors.muted};
+  };
+
+  const reviewSecondaryActions = (
+    <FooterRow>
+      {isDynamicTemplate ? (
+        <Button
+          label="Discard All and Rescan"
+          icon={RefreshCw}
+          variant="dangerOutline"
+          style={styles.flexButton}
+          onPress={() => {setDynamicPages([]); setDynamicManifest(null); setWrittenScores({});}}
+          disabled={isBusy}
+        />
+      ) : null}
+      {hasNextStudent ? (
+        <Button
+          label="Next Student ›"
+          variant="secondary"
+          style={styles.flexButton}
+          onPress={() => requestCloseReview(selectNextStudent)}
+          disabled={isBusy}
+        />
+      ) : null}
+    </FooterRow>
+  );
+  const writtenRemaining = combinedWrittenEvidence.length - scoredWrittenCount;
+
   return (
     <>
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <SafeAreaView style={styles.safeArea}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={onClose} style={styles.iconButton} disabled={isBusy}>
-            <X size={23} color="#17261B" strokeWidth={2.5} />
-          </TouchableOpacity>
-          <View style={styles.headerCopy}>
-            <Text style={styles.title}>{test.test_name || 'V3 Assessment'}</Text>
-            {/* Two assignments can easily share a near-identical name (e.g. "English
-                Quarterly Demo Assessment" vs "English Quarterly Demo (Live Scan
-                Subset)") under the very same class - the assignment ID is the one
-                thing that's always unique, so it's shown here as the disambiguator. */}
-            <Text style={styles.assignmentBadge} numberOfLines={1}>
-              {[classData.grade_level_name, classData.section_name].filter(Boolean).join(' - ')}
-              {classData.grade_level_name || classData.section_name ? ' · ' : ''}
-              Assignment #{test.test_assignment_id}
-            </Text>
-            <Text style={styles.subtitle}>Scan, verify, and send official result</Text>
-          </View>
-          {isBusy ? <ActivityIndicator color="#20B94B" /> : <ScanLine size={22} color="#20B94B" />}
-        </View>
+        <ScreenHeader
+          title={test.test_name || 'V3 Assessment'}
+          // Two assignments can easily share a near-identical name under the
+          // very same class - the assignment ID is the one thing that's always
+          // unique, so it's shown here as the disambiguator.
+          subtitle={(
+            <>
+              <Text style={styles.headerAssignment} numberOfLines={1}>
+                {[classData.grade_level_name, classData.section_name].filter(Boolean).join(' - ')}
+                {classData.grade_level_name || classData.section_name ? ' · ' : ''}
+                Assignment #{test.test_assignment_id}
+              </Text>
+              <Text style={styles.headerSubtitle}>Scan, verify, and send official result</Text>
+            </>
+          )}
+          onClose={onClose}
+          closeLabel="Close assessment"
+          navigationDisabled={isBusy}
+          busy={isBusy}
+        />
 
         <View style={styles.body}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           {eligibilityIssue ? (
-            <View style={styles.blocker}>
-              <Text style={styles.blockerTitle}>Answer sheet not ready</Text>
-              <Text style={styles.blockerText}>{eligibilityIssue}</Text>
+            <Banner tone="warning" title="Answer sheet not ready" style={styles.sectionSpacing}>
+              <Text style={styles.bannerText}>{eligibilityIssue}</Text>
               {__DEV__ ? (
-                <Text style={styles.blockerMeta}>Backend URL: {V3_BASE_URL}</Text>
+                <Text style={styles.bannerMeta}>Backend URL: {V3_BASE_URL}</Text>
               ) : null}
-            </View>
+            </Banner>
           ) : null}
 
           {!eligibilityIssue && knownTotalPages !== null && knownTotalPages > 1 ? (
-            <View style={styles.pageCountBanner}>
-              <Text style={styles.pageCountBannerText}>
-                This assessment's answer sheet has {knownTotalPages} pages. Scan every page, one at
-                a time, for each student before sending their result.
-              </Text>
-            </View>
+            <Banner
+              tone="info"
+              style={styles.sectionSpacing}
+              message={`This assessment's answer sheet has ${knownTotalPages} pages. Scan every page, one at a time, for each student before sending their result.`}
+            />
           ) : null}
 
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Select test student</Text>
-            <Text style={styles.sectionProgress}>{checkedCount}/{students.length} checked</Text>
-          </View>
+          <ProgressBar
+            current={checkedCount}
+            total={students.length}
+            label={`${checkedCount} of ${students.length} checked`}
+            style={styles.sectionSpacing}
+          />
 
           {bulkSync ? (
-            <View style={styles.bulkSyncCard}>
-              <Text style={styles.bulkSyncTitle}>
-                {bulkSync.completed < bulkSync.total
-                  ? `Sending ${bulkSync.completed + 1} of ${bulkSync.total}...`
-                  : `Sent ${bulkSync.total - bulkSync.failed.length}/${bulkSync.total} to the backend.`}
-              </Text>
-              {bulkSync.completed < bulkSync.total ? (
-                <ActivityIndicator color="#20B94B" style={styles.bulkSyncSpinner} />
-              ) : null}
+            <Card style={styles.sectionSpacing}>
+              <View style={styles.bulkSyncHeader}>
+                <Text style={styles.bulkSyncTitle}>
+                  {bulkSync.completed < bulkSync.total
+                    ? `Sending ${bulkSync.completed + 1} of ${bulkSync.total}...`
+                    : `Sent ${bulkSync.total - bulkSync.failed.length}/${bulkSync.total} to the backend.`}
+                </Text>
+                {bulkSync.completed < bulkSync.total ? (
+                  <ActivityIndicator color={theme.colors.primary} />
+                ) : null}
+              </View>
               {bulkSync.failed.length > 0 ? (
                 <>
                   <Text style={styles.bulkSyncFailedHeading}>
@@ -1308,75 +1365,58 @@ export const V3ObjectiveWorkflowModal = ({
                 </>
               ) : null}
               {bulkSync.completed >= bulkSync.total ? (
-                <TouchableOpacity
-                  style={[styles.secondaryButton, styles.bulkSyncDismiss]}
+                <Button
+                  label="Dismiss"
+                  variant="secondary"
                   onPress={() => setBulkSync(null)}
-                >
-                  <Text style={styles.secondaryText}>Dismiss</Text>
-                </TouchableOpacity>
+                  style={styles.bulkSyncDismiss}
+                />
               ) : null}
-            </View>
+            </Card>
           ) : pendingSyncStudents.length > 0 ? (
-            <TouchableOpacity
-              style={[styles.primaryButton, styles.bulkSyncButton]}
+            <Button
+              label={`Send All Saved Results (${pendingSyncStudents.length})`}
+              icon={CloudUpload}
               onPress={syncAllQueued}
               disabled={isBusy}
-            >
-              <RefreshCw size={18} color="#FFFFFF" />
-              <Text style={styles.primaryText}>
-                Send All Saved Results ({pendingSyncStudents.length})
-              </Text>
-            </TouchableOpacity>
+              fullWidth
+              style={styles.sectionSpacing}
+            />
           ) : null}
 
-          <View style={styles.searchBox}>
-            <Search size={16} color="#64748B" strokeWidth={2.4} />
-            <TextInput
-              style={styles.searchInput}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholder="Search student name..."
-              placeholderTextColor="#94A3B8"
-              autoCapitalize="none"
-              autoCorrect={false}
-              returnKeyType="search"
-            />
-          </View>
+          <Text style={styles.sectionTitle} accessibilityRole="header">Select test student</Text>
 
-          {filteredStudents.length === 0 ? (
-            <Text style={styles.emptyState}>No student matches "{searchQuery}".</Text>
+          <SearchField
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search student name..."
+            containerStyle={styles.sectionSpacing}
+          />
+
+          {filteredStudents.length === 0 && searchQuery.trim() ? (
+            <EmptyState
+              icon={Search}
+              title={`No student matches "${searchQuery}"`}
+              action={{label: 'Clear search', onPress: () => setSearchQuery('')}}
+            />
           ) : null}
 
           {filteredStudents.map(student => {
-            const active = selected?.classListId === student.classListId;
+            const status = studentStatus(student);
             return (
-              <TouchableOpacity
+              <ListRow
                 key={student.classListId}
-                style={[styles.studentRow, active && styles.studentRowActive]}
+                title={studentName(student)}
+                subtitle={status.text}
+                subtitleColor={status.color}
+                selected={selected?.classListId === student.classListId}
+                right={student.officialScore
+                  ? <CircleCheck size={22} color={theme.colors.primary} strokeWidth={2.2} />
+                  : null}
                 onPress={() => {setSelected(student); setScan(null); setDynamicPages([]); setDynamicManifest(null); setWrittenScores({}); setError(null); setMessage(null);}}
                 disabled={isBusy}
-              >
-                <View style={styles.studentCopy}>
-                  <Text style={styles.studentName}>{studentName(student)}</Text>
-                  <Text
-                    style={[
-                      styles.studentMeta,
-                      student.officialScore
-                        ? styles.studentMetaOfficial
-                        : student.operationStage && styles.studentMetaQueued,
-                    ]}
-                  >
-                    {student.officialScore
-                      ? `Official ${student.officialScore.totalScore}/${student.officialScore.maxScore}`
-                      : student.operationStage
-                        ? `Saved: ${student.operationStage.replaceAll('_', ' ')}${preliminaryLabel(
-                            savedPreliminaryByClassListId.get(student.classListId),
-                          )}`
-                        : 'Not checked'}
-                  </Text>
-                </View>
-                {student.officialScore ? <CheckCircle2 size={21} color="#16863A" /> : null}
-              </TouchableOpacity>
+                style={styles.rowSpacing}
+              />
             );
           })}
 
@@ -1385,64 +1425,55 @@ export const V3ObjectiveWorkflowModal = ({
         </View>
 
         {selected && selected.operationStage && !selected.officialScore ? (
-          <View style={styles.stickyFooter}>
-            <Text style={styles.stickyFooterHint}>
-              {selectedUploadStarted
-                ? 'Upload already started, so this result can no longer be changed on the phone. '
-                  + 'Send it again to finish.'
-                : 'Saved on this phone. You can still change it until you send it.'}
-            </Text>
-            <TouchableOpacity
-              style={[styles.primaryButton, styles.stickyFooterSend]}
+          <StickyFooter
+            hint={selectedUploadStarted
+              ? 'Upload already started, so this result can no longer be changed on the phone. '
+                + 'Send it again to finish.'
+              : 'Saved on this phone. You can still change it until you send it.'}
+          >
+            <Button
+              label="Send Saved Result to Backend"
+              icon={CloudUpload}
               onPress={() => (isDynamicTemplate ? syncDynamicRecord(selected) : syncRecord(selected))}
               disabled={isBusy}
-            >
-              <RefreshCw size={18} color="#FFFFFF" />
-              <Text style={styles.primaryText}>Send Saved Result to Backend</Text>
-            </TouchableOpacity>
+              fullWidth
+            />
             {!selectedUploadStarted ? (
-              <View style={[styles.stickyFooterRow, styles.stickyFooterSecondaryRow]}>
+              <FooterRow>
                 {selectedRecord && selectedRecord.writtenAnswers.length > 0 ? (
-                  <TouchableOpacity
-                    style={[styles.secondaryButton, styles.stickyFooterButton]}
+                  <Button
+                    label="Edit Scores"
+                    variant="secondary"
+                    style={styles.flexButton}
                     onPress={openEditSavedResult}
                     disabled={isBusy}
-                  >
-                    <Text style={styles.secondaryText}>Edit Scores</Text>
-                  </TouchableOpacity>
+                  />
                 ) : null}
-                <TouchableOpacity
-                  style={[styles.secondaryButton, styles.discardButton, styles.stickyFooterButton]}
+                <Button
+                  label="Discard & Rescan"
+                  icon={XCircle}
+                  variant="dangerOutline"
+                  style={styles.flexButton}
                   onPress={() => discardQueuedResult(selected)}
                   disabled={isBusy}
-                >
-                  <XCircle size={18} color="#B42318" strokeWidth={2.4} />
-                  <Text style={[styles.secondaryText, styles.discardText]}>Discard & Rescan</Text>
-                </TouchableOpacity>
-              </View>
+                />
+              </FooterRow>
             ) : null}
-          </View>
+          </StickyFooter>
         ) : null}
 
         {selected && !selected.operationStage && !eligibilityIssue && !showReview &&
           (!isDynamicTemplate || !isDynamicCaptureComplete) ? (
-          <View style={styles.stickyFooter}>
-            {isDynamicTemplate && knownTotalPages && knownTotalPages > 1 ? (
-              <Text style={styles.stickyFooterHint}>
-                Scan page {nextMissingPageNumber} of {knownTotalPages}
-              </Text>
-            ) : null}
-            <View style={styles.stickyFooterRow}>
-              <TouchableOpacity style={[styles.primaryButton, styles.stickyFooterButton]} onPress={() => runScan('camera')} disabled={isBusy}>
-                <Camera size={18} color="#FFFFFF" />
-                <Text style={styles.primaryText}>Open Camera</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.secondaryButton, styles.stickyFooterButton]} onPress={() => runScan('gallery')} disabled={isBusy}>
-                <ImageIcon size={18} color="#174F2A" />
-                <Text style={styles.secondaryText}>Choose Photo</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+          <StickyFooter
+            hint={isDynamicTemplate && knownTotalPages && knownTotalPages > 1
+              ? `Scan page ${nextMissingPageNumber} of ${knownTotalPages}`
+              : null}
+          >
+            <FooterRow>
+              <Button label="Open Camera" icon={Camera} style={styles.flexButton} onPress={() => runScan('camera')} disabled={isBusy} />
+              <Button label="Choose Photo" icon={ImageIcon} variant="secondary" style={styles.flexButton} onPress={() => runScan('gallery')} disabled={isBusy} />
+            </FooterRow>
+          </StickyFooter>
         ) : null}
       </SafeAreaView>
     </Modal>
@@ -1462,58 +1493,48 @@ export const V3ObjectiveWorkflowModal = ({
       onRequestClose={() => requestCloseReview()}
     >
       <SafeAreaView style={styles.safeArea}>
-        <View style={styles.header}>
-          <TouchableOpacity
-            onPress={() => requestCloseReview()}
-            style={styles.iconButton}
-            disabled={isBusy}
-            accessibilityLabel="Back to student list"
-          >
-            <ChevronLeft size={25} color="#17261B" strokeWidth={2.5} />
-          </TouchableOpacity>
-          <View style={styles.headerCopy}>
-            <Text style={styles.title}>Review & Verify</Text>
-            <Text style={styles.subtitle}>{selected ? studentName(selected) : ''}</Text>
-          </View>
-          <HeaderScore score={dynamicPages.length > 0 ? reviewPreliminary : null} />
-          {isBusy ? <ActivityIndicator color="#20B94B" /> : null}
-        </View>
+        <ScreenHeader
+          title="Review & Verify"
+          subtitle={selected ? studentName(selected) : ''}
+          onBack={() => requestCloseReview()}
+          backLabel="Back to student list"
+          navigationDisabled={isBusy}
+          right={<HeaderScore score={dynamicPages.length > 0 ? reviewPreliminary : null} />}
+          busy={isBusy}
+        />
 
         <View style={styles.body}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           {scan ? (
             <View>
-              <Text style={styles.sectionTitle}>Teacher verification</Text>
+              <Text style={styles.sectionTitle} accessibilityRole="header">Teacher verification</Text>
               <Text style={styles.verificationHint}>
                 Confirm these match what's shaded on the paper. A misread mark can only be fixed
                 by rescanning. The score appears after you send the result.
               </Text>
-              <Image source={{uri: scan.annotatedImageUri}} style={styles.preview} resizeMode="contain" />
-              {scan.detections.map(detection => (
-                <View style={styles.detectionRow} key={detection.itemNumber}>
-                  <Text style={styles.itemNumber}>Q{detection.itemNumber}</Text>
-                  <Text style={styles.detectedAnswer}>{detection.detectedOption || 'Blank'}</Text>
-                  <Text style={styles.detectionStatus}>{detection.detectionStatus.replaceAll('_', ' ')}</Text>
-                </View>
-              ))}
+              <Card padded={false} style={styles.sectionSpacing}>
+                <Image
+                  source={{uri: scan.annotatedImageUri}}
+                  style={styles.preview}
+                  resizeMode="contain"
+                  accessibilityLabel="Scanned answer sheet"
+                />
+              </Card>
+              <Card padded={false} style={styles.sectionSpacing}>
+                {scan.detections.map((detection, index) => (
+                  <View style={[styles.detectionRow, index > 0 && styles.rowDivider]} key={detection.itemNumber}>
+                    <Text style={styles.itemNumber}>Q{detection.itemNumber}</Text>
+                    <Text style={styles.detectedAnswer}>{detection.detectedOption || 'Blank'}</Text>
+                    <Text style={styles.detectionStatus}>{detection.detectionStatus.replaceAll('_', ' ')}</Text>
+                  </View>
+                ))}
+              </Card>
               {unacceptableCount > 0 ? (
-                <Text style={styles.bulkSyncFailedHeading}>
-                  {unacceptableCount} item(s) are uncertain or multiple-mark - recorded as-is and scored as zero,
-                  same as blank.
-                </Text>
-              ) : null}
-              <TouchableOpacity style={styles.primaryButton} onPress={() => queueRecord(selected!, scan)} disabled={isBusy}>
-                <CheckCircle2 size={18} color="#FFFFFF" />
-                <Text style={styles.primaryText}>Accept and Save Result</Text>
-              </TouchableOpacity>
-              {hasNextStudent ? (
-                <TouchableOpacity
-                  style={[styles.secondaryButton, styles.reviewActionSpacing]}
-                  onPress={() => requestCloseReview(selectNextStudent)}
-                  disabled={isBusy}
-                >
-                  <Text style={styles.secondaryText}>Next Student ›</Text>
-                </TouchableOpacity>
+                <Banner
+                  tone="warning"
+                  style={styles.sectionSpacing}
+                  message={`${unacceptableCount} item(s) are uncertain or multiple-mark - recorded as-is and scored as zero, same as blank.`}
+                />
               ) : null}
             </View>
           ) : null}
@@ -1521,107 +1542,120 @@ export const V3ObjectiveWorkflowModal = ({
           {dynamicPages.length > 0 ? (
             <View>
               <PreliminaryScoreBanner score={reviewPreliminary} />
-              <Text style={styles.sectionTitle}>Scanned answer sheet</Text>
-              <Text style={styles.blockerText}>
+              <Text style={styles.sectionTitle} accessibilityRole="header">Scanned answer sheet</Text>
+              <Text style={styles.helperText}>
                 Not sent yet. After you tap "Accept and Save Result", it stays on this phone
                 until you send it from the student list.
               </Text>
 
               {dynamicTotalPages !== null && dynamicTotalPages > 1 ? (
-                <View style={styles.pageProgressRow}>
+                <View style={styles.sectionSpacing}>
                   <Text style={styles.reviewSubheading}>
                     Pages captured: {dynamicPages.length}/{dynamicTotalPages}
                   </Text>
                   {!isDynamicCaptureComplete && nextMissingPageNumber !== null ? (
-                    <View style={styles.blocker}>
-                      <Text style={styles.blockerText}>
-                        Scan page {nextMissingPageNumber} of {dynamicTotalPages} to continue -
-                        the answer sheet is not complete yet.
-                      </Text>
-                    </View>
+                    <Banner
+                      tone="warning"
+                      message={`Scan page ${nextMissingPageNumber} of ${dynamicTotalPages} to continue - the answer sheet is not complete yet.`}
+                    />
                   ) : null}
                 </View>
               ) : null}
 
               {dynamicPages.map(page => (
-                <View key={`page-${page.identity.pageNumber}`} style={styles.pagePreviewCard}>
-                  <Text style={styles.writtenEvidenceType}>
+                <Card key={`page-${page.identity.pageNumber}`} padded={false} style={styles.sectionSpacing}>
+                  <Text style={styles.pageLabel}>
                     Page {page.identity.pageNumber} of {page.identity.totalPages}
                   </Text>
-                  <Image source={{uri: page.annotatedImageUri}} style={styles.preview} resizeMode="contain" />
-                </View>
+                  <Image
+                    source={{uri: page.annotatedImageUri}}
+                    style={styles.preview}
+                    resizeMode="contain"
+                    accessibilityLabel={`Scanned page ${page.identity.pageNumber}`}
+                  />
+                </Card>
               ))}
 
               {combinedObjectiveDetections.length > 0 ? (
                 <>
-                  <Text style={styles.reviewSubheading}>Objective answers (read-only)</Text>
+                  <Text style={styles.sectionTitle} accessibilityRole="header">Objective answers (read-only)</Text>
                   <Text style={styles.verificationHint}>
                     Confirm these match what's shaded on the paper. A misread mark can only be
                     fixed by rescanning the page.
                   </Text>
-                </>
-              ) : null}
-              {combinedObjectiveDetections.map(detection => {
-                const pillOptions = pillOptionsByRegion.get(detection.regionUuid)
-                  ?? (detection.questionType === 'true_false'
-                    ? FALLBACK_TRUE_FALSE_PILLS
-                    : FALLBACK_MULTIPLE_CHOICE_PILLS);
-                return (
-                  <View style={styles.objectiveReviewRow} key={`objective-${detection.itemNumber}`}>
-                    <View style={styles.objectiveReviewHeader}>
-                      <Text style={styles.itemNumber}>Q{detection.itemNumber}</Text>
-                      <Text style={styles.detectionStatus}>
-                        {detection.detectionStatus.replaceAll('_', ' ')}
-                      </Text>
-                    </View>
-                    <View style={styles.optionPillRow}>
-                      {[
-                        ...pillOptions,
-                        {key: 'Blank', label: 'Blank'},
-                        {key: 'Multiple', label: 'Multiple'},
-                      ].map(({key, label}) => {
-                        // detectedLabel is the detected option's manifest key; compare on
-                        // that, and show the label printed on paper (T/F for True/False).
-                        const detected = detection.detectedLabel?.trim().toUpperCase() || null;
-                        const isMultiple = detection.detectionStatus === 'multiple_marks';
-                        const isDetected = key === 'Multiple'
-                          ? isMultiple
-                          : key === 'Blank'
-                            ? !detected && !isMultiple
-                            : detected === key.toUpperCase();
-                        return (
-                          <View
-                            key={key}
-                            style={[
-                              styles.optionPill,
-                              isDetected && (key === 'Multiple' ? styles.optionPillMultiple : styles.optionPillDetected),
-                            ]}
-                          >
-                            <Text
-                              style={[
-                                styles.optionPillText,
-                                isDetected && styles.optionPillTextDetected,
-                              ]}
-                            >
-                              {label}
+                  <Card padded={false} style={styles.sectionSpacing}>
+                    {combinedObjectiveDetections.map((detection, index) => {
+                      const pillOptions = pillOptionsByRegion.get(detection.regionUuid)
+                        ?? (detection.questionType === 'true_false'
+                          ? FALLBACK_TRUE_FALSE_PILLS
+                          : FALLBACK_MULTIPLE_CHOICE_PILLS);
+                      // detectedLabel is the detected option's manifest key; compare on
+                      // that, and show the label printed on paper (T/F for True/False).
+                      const detected = detection.detectedLabel?.trim().toUpperCase() || null;
+                      const isMultiple = detection.detectionStatus === 'multiple_marks';
+                      return (
+                        <View
+                          style={[styles.objectiveReviewRow, index > 0 && styles.rowDivider]}
+                          key={`objective-${detection.itemNumber}`}
+                        >
+                          <View style={styles.itemHeader}>
+                            <Text style={styles.itemNumber}>Q{detection.itemNumber}</Text>
+                            <Text style={styles.detectionStatus}>
+                              {detection.detectionStatus.replaceAll('_', ' ')}
                             </Text>
                           </View>
-                        );
-                      })}
-                    </View>
-                  </View>
-                );
-              })}
+                          <View style={styles.optionPillRow}>
+                            {[
+                              ...pillOptions,
+                              {key: 'Blank', label: 'Blank'},
+                              {key: 'Multiple', label: 'Multiple'},
+                            ].map(({key, label}) => {
+                              const isDetected = key === 'Multiple'
+                                ? isMultiple
+                                : key === 'Blank'
+                                  ? !detected && !isMultiple
+                                  : detected === key.toUpperCase();
+                              const pillStyle = !isDetected
+                                ? null
+                                : key === 'Multiple'
+                                  ? styles.optionPillMultiple
+                                  : key === 'Blank'
+                                    ? styles.optionPillBlank
+                                    : styles.optionPillDetected;
+                              const textStyle = !isDetected
+                                ? null
+                                : key === 'Multiple'
+                                  ? styles.optionPillTextMultiple
+                                  : key === 'Blank'
+                                    ? styles.optionPillTextBlank
+                                    : styles.optionPillTextDetected;
+                              return (
+                                <View
+                                  key={key}
+                                  style={[styles.optionPill, pillStyle]}
+                                  accessibilityLabel={`${label}${isDetected ? ', detected' : ''}`}
+                                >
+                                  <Text style={[styles.optionPillText, textStyle]}>{label}</Text>
+                                </View>
+                              );
+                            })}
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </Card>
+                </>
+              ) : null}
 
               {combinedWrittenEvidence.length > 0 ? (
                 <>
-                  <View style={styles.objectiveReviewHeader}>
-                    <Text style={styles.reviewSubheading}>Written-response evidence</Text>
+                  <View style={styles.itemHeader}>
+                    <Text style={styles.sectionTitle} accessibilityRole="header">Written-response evidence</Text>
                     <Text style={styles.sectionProgress}>
                       {scoredWrittenCount}/{combinedWrittenEvidence.length} scored
                     </Text>
                   </View>
-                  <Text style={styles.scoringHint}>
+                  <Text style={styles.helperText}>
                     The points you enter here (Right/Wrong, partial points, or a rubric score) are
                     the student's score for each item, saved on the web exactly as entered.
                     Double-check each one before saving.
@@ -1643,44 +1677,6 @@ export const V3ObjectiveWorkflowModal = ({
                   )}
                 />
               ))}
-
-              {isDynamicCaptureComplete ? (
-                combinedWrittenEvidence.length > scoredWrittenCount ? (
-                  <View style={styles.blocker}>
-                    <Text style={styles.blockerText}>
-                      Score every written-response item above before sending -
-                      {' '}{combinedWrittenEvidence.length - scoredWrittenCount} remaining.
-                    </Text>
-                  </View>
-                ) : (
-                  <TouchableOpacity
-                    style={styles.primaryButton}
-                    onPress={() => queueDynamicRecord(selected!)}
-                    disabled={isBusy}
-                  >
-                    <CheckCircle2 size={18} color="#FFFFFF" />
-                    <Text style={styles.primaryText}>Accept and Save Result</Text>
-                  </TouchableOpacity>
-                )
-              ) : null}
-
-              <TouchableOpacity
-                style={[styles.secondaryButton, styles.reviewActionSpacing]}
-                onPress={() => {setDynamicPages([]); setDynamicManifest(null); setWrittenScores({});}}
-                disabled={isBusy}
-              >
-                <RefreshCw size={18} color="#174F2A" />
-                <Text style={styles.secondaryText}>Discard All and Rescan</Text>
-              </TouchableOpacity>
-              {hasNextStudent ? (
-                <TouchableOpacity
-                  style={[styles.secondaryButton, styles.reviewActionSpacing]}
-                  onPress={() => requestCloseReview(selectNextStudent)}
-                  disabled={isBusy}
-                >
-                  <Text style={styles.secondaryText}>Next Student ›</Text>
-                </TouchableOpacity>
-              ) : null}
             </View>
           ) : null}
 
@@ -1688,22 +1684,44 @@ export const V3ObjectiveWorkflowModal = ({
         {statusOverlay}
         </View>
 
-        {isDynamicTemplate && dynamicPages.length > 0 && !isDynamicCaptureComplete ? (
-          <View style={styles.stickyFooter}>
-            <Text style={styles.stickyFooterHint}>
-              Scan page {nextMissingPageNumber} of {knownTotalPages}
-            </Text>
-            <View style={styles.stickyFooterRow}>
-              <TouchableOpacity style={[styles.primaryButton, styles.stickyFooterButton]} onPress={() => runScan('camera')} disabled={isBusy}>
-                <Camera size={18} color="#FFFFFF" />
-                <Text style={styles.primaryText}>Open Camera</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.secondaryButton, styles.stickyFooterButton]} onPress={() => runScan('gallery')} disabled={isBusy}>
-                <ImageIcon size={18} color="#174F2A" />
-                <Text style={styles.secondaryText}>Choose Photo</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+        {scan ? (
+          <StickyFooter>
+            <Button
+              label="Accept and Save Result"
+              icon={CircleCheck}
+              onPress={() => queueRecord(selected!, scan)}
+              disabled={isBusy}
+              fullWidth
+            />
+            {hasNextStudent ? reviewSecondaryActions : null}
+          </StickyFooter>
+        ) : null}
+
+        {isDynamicTemplate && dynamicPages.length > 0 ? (
+          isDynamicCaptureComplete ? (
+            <StickyFooter
+              hint={writtenRemaining > 0
+                ? `Score every written-response item above before sending - ${writtenRemaining} remaining.`
+                : null}
+            >
+              <Button
+                label="Accept and Save Result"
+                icon={CircleCheck}
+                onPress={() => queueDynamicRecord(selected!)}
+                disabled={isBusy || writtenRemaining > 0}
+                fullWidth
+              />
+              {reviewSecondaryActions}
+            </StickyFooter>
+          ) : (
+            <StickyFooter hint={`Scan page ${nextMissingPageNumber} of ${knownTotalPages}`}>
+              <FooterRow>
+                <Button label="Open Camera" icon={Camera} style={styles.flexButton} onPress={() => runScan('camera')} disabled={isBusy} />
+                <Button label="Choose Photo" icon={ImageIcon} variant="secondary" style={styles.flexButton} onPress={() => runScan('gallery')} disabled={isBusy} />
+              </FooterRow>
+              {reviewSecondaryActions}
+            </StickyFooter>
+          )
         ) : null}
       </SafeAreaView>
     </Modal>
@@ -1719,22 +1737,15 @@ export const V3ObjectiveWorkflowModal = ({
       onRequestClose={requestCloseEdit}
     >
       <SafeAreaView style={styles.safeArea}>
-        <View style={styles.header}>
-          <TouchableOpacity
-            onPress={requestCloseEdit}
-            style={styles.iconButton}
-            disabled={isBusy}
-            accessibilityLabel="Back to student list"
-          >
-            <ChevronLeft size={25} color="#17261B" strokeWidth={2.5} />
-          </TouchableOpacity>
-          <View style={styles.headerCopy}>
-            <Text style={styles.title}>Edit Saved Scores</Text>
-            <Text style={styles.subtitle}>{selected ? studentName(selected) : ''}</Text>
-          </View>
-          <HeaderScore score={editingPreliminary} />
-          {isBusy ? <ActivityIndicator color="#20B94B" /> : null}
-        </View>
+        <ScreenHeader
+          title="Edit Saved Scores"
+          subtitle={selected ? studentName(selected) : ''}
+          onBack={requestCloseEdit}
+          backLabel="Back to student list"
+          navigationDisabled={isBusy}
+          right={<HeaderScore score={editingPreliminary} />}
+          busy={isBusy}
+        />
 
         <View style={styles.body}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -1767,149 +1778,110 @@ export const V3ObjectiveWorkflowModal = ({
         {statusOverlay}
         </View>
 
-        <View style={styles.stickyFooter}>
-          {!editingComplete ? (
-            <Text style={styles.stickyFooterHint}>Score every written item before saving.</Text>
-          ) : null}
-          <TouchableOpacity
-            style={[
-              styles.primaryButton,
-              styles.stickyFooterSend,
-              (isBusy || !editing?.dirty || !editingComplete) && styles.buttonDisabled,
-            ]}
+        <StickyFooter hint={!editingComplete ? 'Score every written item before saving.' : null}>
+          <Button
+            label="Save Changes"
+            icon={CircleCheck}
             onPress={saveEditedScores}
             disabled={isBusy || !editing?.dirty || !editingComplete}
-          >
-            <CheckCircle2 size={18} color="#FFFFFF" />
-            <Text style={styles.primaryText}>Save Changes</Text>
-          </TouchableOpacity>
-        </View>
+            fullWidth
+          />
+        </StickyFooter>
       </SafeAreaView>
     </Modal>
     </>
   );
 };
 
+const {colors, status, spacing, radius, type} = theme;
+
 const styles = StyleSheet.create({
-  safeArea: {flex: 1, backgroundColor: '#F5F6FA'},
-  header: {minHeight: 68, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#E2E8F0'},
-  iconButton: {width: 42, height: 42, alignItems: 'center', justifyContent: 'center'},
-  headerCopy: {flex: 1, paddingHorizontal: 8},
-  title: {fontSize: 20, fontWeight: '900', color: '#17261B'},
-  assignmentBadge: {fontSize: 11, fontWeight: '900', color: '#16863A', marginTop: 3},
-  subtitle: {fontSize: 11, fontWeight: '700', color: '#64748B', marginTop: 2},
-  content: {padding: 18, paddingBottom: 100},
-  sectionHeaderRow: {flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginTop: 10},
-  sectionTitle: {fontSize: 15, fontWeight: '900', color: '#17261B', marginBottom: 10},
-  sectionProgress: {fontSize: 12, fontWeight: '800', color: '#16863A'},
-  searchBox: {flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 9, paddingHorizontal: 12, height: 42, marginBottom: 12},
-  searchInput: {flex: 1, fontSize: 14, fontWeight: '600', color: '#17261B', padding: 0},
-  emptyState: {fontSize: 13, fontWeight: '700', color: '#64748B', textAlign: 'center', paddingVertical: 20},
-  blocker: {backgroundColor: '#FFF7E5', borderWidth: 1, borderColor: '#FED7AA', borderRadius: 10, padding: 14, marginBottom: 14},
-  blockerTitle: {fontSize: 15, fontWeight: '900', color: '#9A5B06'},
-  blockerText: {fontSize: 13, lineHeight: 19, fontWeight: '700', color: '#7C4A03', marginTop: 5},
-  blockerMeta: {fontSize: 11, color: '#92400E', marginTop: 8},
-  pageCountBanner: {backgroundColor: '#E7F3FF', borderWidth: 1, borderColor: '#BBDEFB', borderRadius: 10, padding: 14, marginBottom: 14},
-  pageCountBannerText: {fontSize: 13, lineHeight: 19, fontWeight: '700', color: '#0D4A8C'},
-  bulkSyncButton: {marginBottom: 14},
-  bulkSyncCard: {backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 10, padding: 14, marginBottom: 14},
-  bulkSyncTitle: {fontSize: 14, fontWeight: '900', color: '#17261B'},
-  bulkSyncSpinner: {marginTop: 10, alignSelf: 'flex-start'},
-  bulkSyncFailedHeading: {fontSize: 13, fontWeight: '800', color: '#B42318', marginTop: 10},
-  bulkSyncFailedRow: {fontSize: 12, fontWeight: '600', color: '#7C4A03', marginTop: 4},
-  bulkSyncDismiss: {marginTop: 12},
-  studentRow: {minHeight: 66, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 9, paddingHorizontal: 14, marginBottom: 8, flexDirection: 'row', alignItems: 'center'},
-  studentRowActive: {borderColor: '#20B94B', backgroundColor: '#EDFBF1'},
-  studentCopy: {flex: 1},
-  studentName: {fontSize: 14, fontWeight: '900', color: '#17261B'},
-  studentMeta: {fontSize: 11, fontWeight: '700', color: '#64748B', marginTop: 4, textTransform: 'capitalize'},
-  studentMetaQueued: {color: '#0D9488'},
-  studentMetaOfficial: {color: '#16863A'},
-  primaryButton: {minHeight: 48, borderRadius: 9, backgroundColor: '#20B94B', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 10},
-  secondaryButton: {minHeight: 48, borderRadius: 9, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#A7DAB5', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8},
-  primaryText: {fontSize: 14, fontWeight: '900', color: '#FFFFFF'},
-  secondaryText: {fontSize: 14, fontWeight: '900', color: '#174F2A'},
-  discardButton: {borderColor: '#FCA5A5'},
-  discardText: {color: '#B42318'},
-  stickyFooter: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
-    paddingHorizontal: 18,
-    paddingTop: 12,
-    paddingBottom: 18,
-    shadowColor: '#000000',
-    shadowOffset: {width: 0, height: -2},
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 12,
+  // White behind the status bar and gesture area; the gray page sits in `body`.
+  safeArea: {flex: 1, backgroundColor: colors.surface},
+  body: {flex: 1, backgroundColor: colors.bg},
+  content: {padding: theme.screenPadding, paddingBottom: spacing.xxxl},
+  statusOverlay: {position: 'absolute', top: 0, left: theme.screenPadding, right: theme.screenPadding},
+  wakingNotice: {marginTop: spacing.sm},
+  headerAssignment: {...type.label, color: colors.primary, marginTop: 2},
+  headerSubtitle: {...type.caption, color: colors.muted},
+  sectionSpacing: {marginBottom: spacing.md},
+  rowSpacing: {marginBottom: spacing.sm},
+  sectionTitle: {...type.cardTitle, color: colors.text, marginTop: spacing.xs, marginBottom: spacing.sm},
+  sectionProgress: {...type.label, color: colors.primary},
+  helperText: {...type.body, color: colors.muted, marginBottom: spacing.md},
+  verificationHint: {...type.body, color: status.info.text, marginBottom: spacing.md},
+  reviewSubheading: {...type.label, color: colors.muted, textTransform: 'uppercase', marginBottom: spacing.sm},
+  bannerText: {...type.body, color: colors.textSecondary},
+  bannerMeta: {...type.caption, color: colors.muted, marginTop: spacing.sm},
+  bulkSyncHeader: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md},
+  bulkSyncTitle: {...type.bodyStrong, color: colors.text, flex: 1},
+  bulkSyncFailedHeading: {...type.bodyStrong, color: status.danger.text, marginTop: spacing.md},
+  bulkSyncFailedRow: {...type.caption, color: colors.textSecondary, marginTop: spacing.xs},
+  bulkSyncDismiss: {marginTop: spacing.md, alignSelf: 'flex-start'},
+  flexButton: {flexGrow: 1, flexBasis: 140},
+  preliminaryHeader: {flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', justifyContent: 'space-between', gap: spacing.sm},
+  preliminaryLabel: {...type.bodyStrong, color: status.success.text},
+  preliminaryValue: {...type.score, color: colors.primary},
+  preliminaryHint: {...type.caption, color: colors.textSecondary, marginTop: spacing.xs},
+  preview: {height: 300, backgroundColor: colors.imageBackdrop},
+  pageLabel: {...type.label, color: colors.textSecondary, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm},
+  itemHeader: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, marginBottom: spacing.sm},
+  itemNumber: {...type.bodyStrong, color: colors.text, minWidth: 40},
+  itemMeta: {...type.label, color: colors.textSecondary, textTransform: 'capitalize', flexShrink: 1, textAlign: 'right'},
+  detectionRow: {minHeight: 48, flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg},
+  rowDivider: {borderTopWidth: 1, borderTopColor: colors.border},
+  detectedAnswer: {...type.cardTitle, color: colors.primary, width: 72},
+  detectionStatus: {...type.caption, color: colors.muted, flex: 1, textTransform: 'capitalize', textAlign: 'right'},
+  objectiveReviewRow: {paddingHorizontal: spacing.lg, paddingVertical: spacing.md},
+  optionPillRow: {flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm},
+  optionPill: {
+    minWidth: theme.touchTarget,
+    minHeight: theme.touchTarget,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.control,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  stickyFooterRow: {flexDirection: 'row', gap: 10},
-  stickyFooterButton: {flex: 1, marginTop: 0},
-  stickyFooterSend: {marginTop: 0},
-  reviewActionSpacing: {marginTop: 12},
-  stickyFooterSecondaryRow: {marginTop: 10},
-  buttonDisabled: {opacity: 0.5},
-  preliminaryBanner: {backgroundColor: '#ECFDF3', borderWidth: 1, borderColor: '#A7DAB5', borderRadius: 10, padding: 14, marginBottom: 14},
-  preliminaryHeader: {flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between'},
-  preliminaryLabel: {fontSize: 13, fontWeight: '900', color: '#174F2A'},
-  preliminaryValue: {fontSize: 22, fontWeight: '900', color: '#16863A'},
-  preliminaryHint: {fontSize: 11, lineHeight: 16, fontWeight: '600', color: '#3F6B4E', marginTop: 6},
-  acceptedAnswersBox: {backgroundColor: '#F1F5F9', borderRadius: 7, padding: 10, marginBottom: 10},
-  acceptedAnswersLabel: {fontSize: 11, fontWeight: '900', color: '#475569', textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 4},
-  acceptedAnswerText: {fontSize: 14, fontWeight: '700', color: '#17261B', marginTop: 2},
-  rubricTotal: {fontSize: 14, fontWeight: '900', color: '#16863A', marginTop: 10, marginBottom: 4},
-  criterionDescription: {fontSize: 12, lineHeight: 17, color: '#64748B', marginTop: -4, marginBottom: 8},
-  partialPointsRow: {marginTop: 10},
-  partialPointsLabel: {fontSize: 12, fontWeight: '800', color: '#475569', marginBottom: 6},
-  stickyFooterHint: {fontSize: 12, fontWeight: '800', color: '#9A5B06', textAlign: 'center', marginBottom: 8},
-  reviewSubheading: {fontSize: 12, fontWeight: '900', color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.4, marginTop: 16, marginBottom: 8},
-  verificationHint: {fontSize: 12, lineHeight: 17, fontWeight: '600', color: '#0D4A8C', marginTop: 4, marginBottom: 10},
-  scoringHint: {fontSize: 12, lineHeight: 17, fontWeight: '700', color: '#166534', marginTop: 4, marginBottom: 10},
-  preview: {height: 300, backgroundColor: '#E5E7EB', borderRadius: 8, marginBottom: 12},
-  pageProgressRow: {marginTop: 4},
-  pagePreviewCard: {marginBottom: 4},
-  objectiveReviewRow: {paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#E5E7EB'},
-  objectiveReviewHeader: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8},
-  optionPillRow: {flexDirection: 'row', gap: 8},
-  optionPill: {minWidth: 44, height: 36, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0', backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8},
-  optionPillDetected: {backgroundColor: '#20B94B', borderColor: '#20B94B'},
-  optionPillMultiple: {backgroundColor: '#C2413B', borderColor: '#C2413B'},
-  optionPillText: {fontSize: 13, fontWeight: '900', color: '#64748B'},
-  optionPillTextDetected: {color: '#FFFFFF'},
-  writtenEvidenceCard: {backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 9, padding: 12, marginBottom: 10},
-  writtenEvidenceType: {fontSize: 12, fontWeight: '800', color: '#174F2A', textTransform: 'capitalize'},
-  writtenEvidenceImage: {height: 140, backgroundColor: '#F1F5F9', borderRadius: 6, marginBottom: 8},
-  scoreButtonRow: {flexDirection: 'row', gap: 10},
-  scoreButton: {flex: 1, minHeight: 44, borderRadius: 9, borderWidth: 1.5, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6},
-  scoreButtonWrong: {borderColor: '#B42318', backgroundColor: '#FFFFFF'},
-  scoreButtonWrongActive: {backgroundColor: '#D92D20', borderColor: '#D92D20'},
-  scoreButtonRight: {borderColor: '#16863A', backgroundColor: '#FFFFFF'},
-  scoreButtonRightActive: {backgroundColor: '#20B94B', borderColor: '#20B94B'},
-  scoreButtonText: {fontSize: 13, fontWeight: '900', color: '#17261B'},
-  scoreButtonTextActive: {color: '#FFFFFF'},
-  rubricList: {marginTop: 4, borderTopWidth: 1, borderTopColor: '#E5E7EB'},
-  rubricTitle: {fontSize: 13, fontWeight: '900', color: '#17261B', marginTop: 10, marginBottom: 4},
-  criterionRow: {paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#EEF2F6'},
-  criterionName: {fontSize: 13, fontWeight: '700', color: '#334155', marginBottom: 8},
-  criterionStepperRow: {height: 42, flexDirection: 'row', alignItems: 'center', gap: 7},
-  criterionStepperButton: {width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#B9C8C0', borderRadius: 7, backgroundColor: '#FFFFFF'},
-  criterionStepperButtonDisabled: {opacity: 0.4},
-  criterionStepperButtonText: {fontSize: 18, fontWeight: '900', color: '#174F2A'},
-  criterionScoreInput: {width: 60, height: 38, paddingHorizontal: 6, borderWidth: 1, borderColor: '#B9C8C0', borderRadius: 7, backgroundColor: '#FFFFFF', color: '#17261B', fontSize: 15, fontWeight: '900', textAlign: 'center'},
-  criterionMaxText: {fontSize: 12, fontWeight: '700', color: '#64748B'},
-  inputDisabled: {backgroundColor: '#EDF1F0', color: '#687680'},
-  detectionRow: {minHeight: 42, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#E5E7EB'},
-  itemNumber: {width: 48, fontWeight: '900', color: '#17261B'},
-  detectedAnswer: {width: 70, fontSize: 16, fontWeight: '900', color: '#16863A'},
-  detectionStatus: {flex: 1, fontSize: 12, fontWeight: '700', color: '#64748B', textTransform: 'capitalize'},
-  body: {flex: 1},
-  statusOverlay: {position: 'absolute', top: 0, left: 14, right: 14},
-  headerScore: {alignItems: 'flex-end', marginRight: 6},
-  headerScoreValue: {fontSize: 18, fontWeight: '900', color: '#16863A'},
-  headerScoreLabel: {fontSize: 11, fontWeight: '800', color: '#64748B', textTransform: 'uppercase'},
+  optionPillDetected: {backgroundColor: colors.primary, borderColor: colors.primary},
+  optionPillBlank: {backgroundColor: status.warning.bg, borderColor: status.warning.border},
+  optionPillMultiple: {backgroundColor: status.danger.bg, borderColor: status.danger.border},
+  optionPillText: {...type.bodyStrong, color: colors.textSecondary},
+  optionPillTextDetected: {color: colors.onPrimary},
+  optionPillTextBlank: {color: status.warning.text},
+  optionPillTextMultiple: {color: status.danger.text},
+  writtenEvidenceImage: {height: 140, backgroundColor: colors.surfaceSunken, borderRadius: radius.control, marginBottom: spacing.md},
+  acceptedAnswersBox: {backgroundColor: colors.surfaceMuted, borderWidth: 1, borderColor: colors.border, borderRadius: radius.control, padding: spacing.md, marginBottom: spacing.md},
+  acceptedAnswersLabel: {...type.label, color: colors.muted, textTransform: 'uppercase', marginBottom: spacing.xs},
+  acceptedAnswerText: {...type.bodyStrong, color: colors.text, marginTop: 2},
+  scoreButtonRow: {flexDirection: 'row', gap: spacing.sm},
+  scoreButton: {flex: 1},
+  scoreButtonWrongActive: {backgroundColor: status.danger.bg},
+  partialPointsRow: {marginTop: spacing.md},
+  partialPointsLabel: {...type.label, color: colors.textSecondary, marginBottom: spacing.xs},
+  rubricList: {borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm},
+  rubricTitle: {...type.bodyStrong, color: colors.text, flex: 1},
+  rubricTotal: {...type.bodyStrong, color: colors.primary},
+  criterionRow: {paddingVertical: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border},
+  criterionName: {...type.bodyStrong, color: colors.textSecondary},
+  criterionDescription: {...type.caption, color: colors.muted, marginTop: 2},
+  criterionStepperRow: {minHeight: theme.touchTarget, flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginTop: spacing.xs},
+  stepperButton: {borderWidth: 1, borderColor: colors.borderStrong, borderRadius: radius.control},
+  criterionScoreInput: {
+    width: 64,
+    minHeight: theme.touchTarget,
+    paddingHorizontal: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    borderRadius: radius.control,
+    backgroundColor: colors.surface,
+    color: colors.text,
+    fontSize: type.cardTitle.fontSize,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  criterionMaxText: {...type.caption, color: colors.muted},
+  inputDisabled: {backgroundColor: colors.surfaceSunken, color: colors.muted},
 });

@@ -1,11 +1,16 @@
 import React from 'react';
-import { Text, TouchableOpacity } from 'react-native';
+import { Text } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 
 import { V3StatusToast } from '../src/components/V3StatusToast';
 
 const texts = (renderer: ReactTestRenderer.ReactTestRenderer) =>
   renderer.root.findAllByType(Text).map(node => [node.props.children].flat().join(''));
+const buttons = (renderer: ReactTestRenderer.ReactTestRenderer) =>
+  renderer.root.findAll(
+    node => node.props.accessibilityRole === 'button' && typeof node.props.onPress === 'function',
+    { deep: false },
+  );
 
 describe('V3StatusToast', () => {
   beforeEach(() => jest.useFakeTimers());
@@ -51,7 +56,7 @@ describe('V3StatusToast', () => {
     await ReactTestRenderer.act(async () => { jest.advanceTimersByTime(10000); });
     expect(texts(renderer)).toEqual(['Unable to send the result.', 'Try again', 'Dismiss']);
 
-    const [retryButton, dismissButton] = renderer.root.findAllByType(TouchableOpacity);
+    const [retryButton, dismissButton] = buttons(renderer);
     retryButton.props.onPress();
     dismissButton.props.onPress();
     expect(onRetry).toHaveBeenCalledTimes(1);

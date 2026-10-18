@@ -1,6 +1,9 @@
 import React from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet } from 'react-native';
-import { Bell, ChevronRight, RefreshCw, Users } from 'lucide-react-native';
+import { FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { ChevronRight, ClipboardList, RefreshCw, School } from 'lucide-react-native';
+
+import { theme, type StatusTone } from '../theme/tokens';
+import { Badge, Banner, Card, EmptyState, IconButton, ScreenHeader, SkeletonList, TabHeader } from './ui';
 
 const formatTestDate = (value?: string | null) => {
   if (!value) {
@@ -19,388 +22,205 @@ const formatTestDate = (value?: string | null) => {
   });
 };
 
-const renderMetaLine = (label: string, value?: string | number | null) => {
-  if (value == null || value === '') {
-    return null;
-  }
+const gradeAndSection = (item: any): string =>
+  [item.grade_level_name, item.section_name].filter(Boolean).join(' - ');
 
-  return (
-    <Text style={styles.metaText}>
-      <Text style={styles.metaLabel}>{label}: </Text>
-      {value}
-    </Text>
-  );
+/** A class's name (its subject) and the grade and section it belongs to. */
+export const classLabels = (item: any): { title: string; subtitle: string | null } => {
+  const section = gradeAndSection(item);
+  if (item.subject_name) {
+    return { title: item.subject_name, subtitle: section || null };
+  }
+  return { title: section || 'Class', subtitle: null };
 };
 
-export const ClassList = ({ data, onSelect, onSync }: any) => {
-  return (
+const CLASS_STATUS_TONES: Record<string, StatusTone> = {
+  Synced: 'success',
+  Unsynced: 'warning',
+  'No Records': 'neutral',
+};
+
+const assessmentStatusTone = (status: string): StatusTone => {
+  switch (status.toLowerCase()) {
+    case 'complete':
+      return 'success';
+    case 'open':
+      return 'info';
+    case 'scheduled':
+      return 'warning';
+    default:
+      return 'neutral';
+  }
+};
+
+const OFFLINE_MESSAGE =
+  "You're offline. You can keep checking saved assessments and send results when you're back online.";
+
+const refreshControl = (refreshing: boolean, onRefresh: () => void) => (
+  <RefreshControl
+    refreshing={refreshing}
+    onRefresh={onRefresh}
+    colors={[theme.colors.primary]}
+    tintColor={theme.colors.primary}
+    progressBackgroundColor={theme.colors.surface}
+  />
+);
+
+interface ClassListProps {
+  data: any[];
+  onSelect: (item: any) => void;
+  /** 'button' for the refresh button and the empty state's Refresh, 'pull' for pull-to-refresh. */
+  onRefresh: (source: 'button' | 'pull') => void;
+  refreshing: boolean;
+  offline: boolean;
+}
+
+export const ClassList = ({ data, onSelect, onRefresh, refreshing, offline }: ClassListProps) => (
+  <View style={styles.screen}>
+    <TabHeader
+      title="Classes"
+      subtitle="Choose a class to begin checking assessments"
+      right={(
+        <IconButton
+          icon={RefreshCw}
+          accessibilityLabel="Download assigned classes"
+          onPress={() => onRefresh('button')}
+          disabled={refreshing}
+          color={theme.colors.primary}
+        />
+      )}
+    />
     <FlatList
       data={data}
       keyExtractor={(item) => item.class_id.toString()}
       contentContainerStyle={styles.listContent}
-      ListHeaderComponent={
-        <View style={styles.classListHeader}>
-          <View style={styles.classListCopy}>
-            <Text style={styles.classListTitle}>Classes</Text>
-            <Text style={styles.classListSubtitle}>Choose a class to begin checking assessments</Text>
-          </View>
-          <View style={styles.classHeaderActions}>
-            <TouchableOpacity style={styles.classHeaderIconButton} activeOpacity={0.9}>
-              <Bell size={30} color="#2DBE4F" strokeWidth={3.2} />
-            </TouchableOpacity>
-            {onSync ? (
-              <TouchableOpacity style={styles.classHeaderIconButton} onPress={onSync} activeOpacity={0.9}>
-                <RefreshCw size={30} color="#2DBE4F" strokeWidth={3.2} />
-              </TouchableOpacity>
-            ) : null}
-          </View>
-        </View>
-      }
-      ListEmptyComponent={
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyTitle}>No downloaded classes yet</Text>
-          <Text style={styles.emptyText}>Use Download Assigned Data to load your assigned classes and tests.</Text>
-        </View>
-      }
+      refreshControl={refreshControl(refreshing, () => onRefresh('pull'))}
+      ListHeaderComponent={offline ? <Banner tone="info" message={OFFLINE_MESSAGE} style={styles.banner} /> : null}
+      ListEmptyComponent={refreshing ? <SkeletonList /> : (
+        <EmptyState
+          icon={School}
+          title="No downloaded classes yet"
+          message="Pull down to refresh while you're online."
+          action={{ label: 'Refresh', onPress: () => onRefresh('button') }}
+        />
+      )}
+      ItemSeparatorComponent={Separator}
       renderItem={({ item }) => {
-        const className = [item.grade_level_name, item.section_name].filter(Boolean).join(' - ') || item.subject_name || 'Class';
-        const studentCount = item.student_count ?? 0;
+        const { title, subtitle } = classLabels(item);
+        const studentCount = Number(item.student_count ?? 0);
+        const details = [subtitle, `${studentCount} ${studentCount === 1 ? 'student' : 'students'}`]
+          .filter(Boolean)
+          .join(' · ');
+        const status: string | undefined = item.statusLabel;
 
         return (
-          <TouchableOpacity style={styles.classCard} onPress={() => onSelect(item)} activeOpacity={0.9}>
-            <View style={styles.classCardTopRow}>
-              <View style={styles.chevronCircle}>
-                <ChevronRight size={17} color="#2DBE4F" strokeWidth={3} />
+          <Card
+            onPress={() => onSelect(item)}
+            accessibilityLabel={[title, details, status].filter(Boolean).join(', ')}
+          >
+            <View style={styles.cardRow}>
+              <View style={styles.cardCopy}>
+                <Text style={styles.cardTitle}>{title}</Text>
+                <Text style={styles.caption}>{details}</Text>
+                {status ? (
+                  <Badge label={status} tone={CLASS_STATUS_TONES[status] ?? 'neutral'} style={styles.cardBadge} />
+                ) : null}
               </View>
+              <ChevronRight size={20} color={theme.colors.muted} strokeWidth={2.2} />
             </View>
-
-            <Text style={styles.classTitle}>{className}</Text>
-            <View style={styles.classSubjectPill}>
-              <Text style={styles.classSubject} numberOfLines={1}>{item.subject_name || 'Assigned Subject'}</Text>
-            </View>
-
-            <View style={styles.classCardFooter}>
-              <View style={styles.studentCountRow}>
-                <Users size={13} color="#4B5563" strokeWidth={2.3} style={styles.studentIcon} />
-                <Text style={styles.studentCountText}>{studentCount} Students</Text>
-              </View>
-            </View>
-          </TouchableOpacity>
+          </Card>
         );
       }}
     />
-  );
-};
+  </View>
+);
 
-export const TestList = ({ data, onSelect }: any) => {
+interface TestListProps {
+  classItem: any;
+  data: any[];
+  onSelect: (item: any) => void;
+  onBack: () => void;
+  onRefresh: () => void;
+  refreshing: boolean;
+  offline: boolean;
+}
+
+export const TestList = ({ classItem, data, onSelect, onBack, onRefresh, refreshing, offline }: TestListProps) => {
+  const { title, subtitle } = classLabels(classItem);
   return (
-    <FlatList
-      data={data}
-      contentContainerStyle={[styles.listContent, styles.testListContent]}
-      keyExtractor={(item) => item.test_id.toString()}
-      ListEmptyComponent={
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyTitle}>No downloaded tests yet</Text>
-          <Text style={styles.emptyText}>Download assigned data first or choose another class.</Text>
-        </View>
-      }
-      renderItem={({ item }) => {
-        const isUploaded = item.checking_status === 'Uploaded';
-        const isV3 = item.storage_version === 'v3';
-        const statusLabel = isV3
-          ? String(item.assignment_status || 'Downloaded').toUpperCase()
-          : isUploaded ? 'Uploaded' : 'Upload';
+    <View style={styles.screen}>
+      <ScreenHeader title={title} subtitle={subtitle ?? undefined} onBack={onBack} backLabel="Back to classes" />
+      <FlatList
+        data={data}
+        contentContainerStyle={styles.listContent}
+        keyExtractor={(item) => item.test_id.toString()}
+        refreshControl={refreshControl(refreshing, onRefresh)}
+        ListHeaderComponent={offline ? <Banner tone="info" message={OFFLINE_MESSAGE} style={styles.banner} /> : null}
+        ListEmptyComponent={refreshing ? <SkeletonList /> : (
+          <EmptyState
+            icon={ClipboardList}
+            title="No assessments yet"
+            message="Activated assessments for this class appear here. Pull down to refresh."
+          />
+        )}
+        ItemSeparatorComponent={Separator}
+        renderItem={({ item }) => {
+          const isV3 = item.storage_version === 'v3';
+          const isUploaded = item.checking_status === 'Uploaded';
+          const statusLabel = isV3
+            ? String(item.assignment_status || 'Downloaded').toUpperCase()
+            : isUploaded ? 'Uploaded' : 'Upload';
+          const statusTone = isV3 ? assessmentStatusTone(statusLabel) : isUploaded ? 'success' : 'warning';
+          const date = formatTestDate(item.test_date) || 'No date';
+          const totalItems = item.total_items ?? 0;
 
-        return (
-          <TouchableOpacity style={styles.testRowCard} onPress={() => onSelect(item)} activeOpacity={0.9}>
-            <View style={styles.testRowContent}>
-              <View style={styles.testRowTopLine}>
-                <Text style={styles.testRowTitle}>{item.test_name || 'Assessment'}</Text>
-                <View style={[styles.uploadBadge, (isUploaded || isV3) && styles.uploadedBadge]}>
-                  <Text style={[styles.uploadBadgeText, (isUploaded || isV3) && styles.uploadedBadgeText]}>
-                    {statusLabel}
-                  </Text>
+          return (
+            <Card
+              accent
+              onPress={() => onSelect(item)}
+              accessibilityLabel={`${item.test_name || 'Assessment'}, ${statusLabel}, Date ${date}, Total Items ${totalItems}`}
+            >
+              <View style={styles.cardRow}>
+                <View style={styles.cardCopy}>
+                  <Text style={styles.cardTitle}>{item.test_name || 'Assessment'}</Text>
+                  <Badge label={statusLabel} tone={statusTone} style={styles.cardBadge} />
+                  <View style={styles.metaRow}>
+                    <Text style={styles.caption}>
+                      <Text style={styles.metaLabel}>Date: </Text>
+                      {date}
+                    </Text>
+                    <Text style={styles.caption}>
+                      <Text style={styles.metaLabel}>Total Items: </Text>
+                      {totalItems}
+                    </Text>
+                  </View>
                 </View>
+                <ChevronRight size={20} color={theme.colors.muted} strokeWidth={2.2} />
               </View>
-              <View style={styles.testMetaRow}>
-                <Text style={styles.testMetaText}>
-                  <Text style={styles.testMetaLabel}>Date: </Text>
-                  {formatTestDate(item.test_date) || 'No date'}
-                </Text>
-                <Text style={styles.testMetaText}>
-                  <Text style={styles.testMetaLabel}>Total Items: </Text>
-                  {item.total_items ?? 0}
-                </Text>
-              </View>
-            </View>
-            <ChevronRight size={21} color="#B6BCC2" strokeWidth={2.6} />
-          </TouchableOpacity>
-        );
-      }}
-    />
+            </Card>
+          );
+        }}
+      />
+    </View>
   );
 };
+
+const Separator = () => <View style={styles.separator} />;
 
 const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: theme.colors.bg },
   listContent: {
-    paddingTop: 18,
-    paddingBottom: 24,
+    flexGrow: 1,
+    padding: theme.screenPadding,
+    paddingBottom: theme.spacing.xxl,
   },
-  testListContent: {
-    paddingTop: 0,
-  },
-  classListHeader: {
-    position: 'relative',
-    paddingHorizontal: 18,
-    marginBottom: 20,
-  },
-  classListCopy: {
-    paddingRight: 104,
-  },
-  classListTitle: {
-    color: '#111827',
-    fontSize: 25,
-    fontWeight: '900',
-  },
-  classListSubtitle: {
-    color: '#64748B',
-    fontSize: 11,
-    fontWeight: '700',
-    marginTop: 3,
-  },
-  classHeaderActions: {
-    position: 'absolute',
-    right: 18,
-    top: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  classHeaderIconButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  classCard: {
-    backgroundColor: '#EFF1F3',
-    marginHorizontal: 20,
-    marginVertical: 7,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 16,
-    elevation: 1,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-  },
-  classCardTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    marginBottom: 6,
-  },
-  chevronCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#E8ECEF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  classTitle: {
-    color: '#111827',
-    fontSize: 18,
-    fontWeight: '900',
-  },
-  classSubjectPill: {
-    alignSelf: 'flex-start',
-    marginTop: 8,
-    backgroundColor: '#DFF7E6',
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  classSubject: {
-    color: '#159947',
-    fontSize: 14,
-    fontWeight: '900',
-  },
-  classCardFooter: {
-    marginTop: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  studentCountRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  studentIcon: {
-    marginRight: 6,
-  },
-  studentCountText: {
-    color: '#4B5563',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  testRowCard: {
-    backgroundColor: '#EFF1F3',
-    marginHorizontal: 10,
-    marginVertical: 8,
-    borderRadius: 10,
-    minHeight: 92,
-    paddingHorizontal: 22,
-    paddingVertical: 18,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  testRowContent: {
-    flex: 1,
-    paddingRight: 12,
-  },
-  testRowTopLine: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  testRowTitle: {
-    color: '#111827',
-    fontSize: 17,
-    fontWeight: '900',
-    flex: 1,
-  },
-  uploadBadge: {
-    backgroundColor: '#E8ECEF',
-    borderRadius: 999,
-    minHeight: 30,
-    paddingHorizontal: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  uploadedBadge: {
-    backgroundColor: '#D8F5DE',
-  },
-  uploadBadgeText: {
-    color: '#6B7280',
-    fontSize: 12,
-    fontWeight: '900',
-  },
-  uploadedBadgeText: {
-    color: '#22A447',
-  },
-  testMetaRow: {
-    marginTop: 14,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 18,
-  },
-  testMetaText: {
-    color: '#4B5563',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  testMetaLabel: {
-    color: '#6B7280',
-    fontWeight: '900',
-  },
-  card: {
-    backgroundColor: '#FFFFFF',
-    padding: 16,
-    marginHorizontal: 16,
-    marginVertical: 6,
-    borderRadius: 16,
-    elevation: 2,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    flexDirection: 'row',
-    alignItems: 'stretch',
-  },
-  statusAccent: {
-    width: 8,
-    borderRadius: 999,
-    marginRight: 14,
-  },
-  classAccent: {
-    backgroundColor: '#34C759',
-  },
-  testAccent: {
-    backgroundColor: '#84CC16',
-  },
-  content: {
-    flex: 1,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: 8,
-    marginBottom: 6,
-  },
-  title: {
-    flex: 1,
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#1F2937',
-  },
-  badge: {
-    backgroundColor: '#E9F9EE',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-  },
-  badgeText: {
-    color: '#1E8E3E',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  classPrimaryDetail: {
-    color: '#374151',
-    fontSize: 14,
-    fontWeight: '700',
-    marginTop: 2,
-  },
-  secondaryBadge: {
-    backgroundColor: '#F2F7F3',
-  },
-  secondaryBadgeText: {
-    color: '#4B5563',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  metaText: {
-    color: '#374151',
-    fontSize: 13,
-    marginTop: 4,
-  },
-  metaLabel: {
-    color: '#6B7280',
-    fontWeight: '700',
-  },
-  emptyState: {
-    backgroundColor: '#FFFFFF',
-    marginHorizontal: 16,
-    marginTop: 20,
-    padding: 24,
-    borderRadius: 16,
-    alignItems: 'center',
-  },
-  emptyTitle: {
-    color: '#1F2937',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  emptyText: {
-    color: '#6B7280',
-    fontSize: 13,
-    textAlign: 'center',
-    marginTop: 6,
-    lineHeight: 18,
-  },
+  banner: { marginBottom: theme.spacing.md },
+  separator: { height: theme.spacing.md },
+  cardRow: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md },
+  cardCopy: { flex: 1 },
+  cardTitle: { ...theme.type.cardTitle, color: theme.colors.text },
+  caption: { ...theme.type.caption, color: theme.colors.muted, marginTop: 2 },
+  cardBadge: { marginTop: theme.spacing.sm },
+  metaRow: { flexDirection: 'row', flexWrap: 'wrap', columnGap: theme.spacing.lg, marginTop: theme.spacing.sm },
+  metaLabel: { ...theme.type.label, color: theme.colors.textSecondary },
 });

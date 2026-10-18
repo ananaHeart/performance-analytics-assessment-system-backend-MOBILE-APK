@@ -1,15 +1,10 @@
-import React, { useState } from 'react';
-import { 
-  View, 
-  Alert,
-  Text, 
-  TextInput, 
-  TouchableOpacity, 
-  StyleSheet
-} from 'react-native';
-import {Eye} from 'lucide-react-native';
+import React, { useRef, useState } from 'react';
+import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+
+import { theme } from '../theme/tokens';
 import { LoginLoading } from './LoginLoading';
 import { MarkaMark } from './MarkaMark';
+import { Button, TextField, useDialog } from './ui';
 
 interface LoginScreenProps {
   onLogin: (email: string, password: string) => void | Promise<void>;
@@ -20,9 +15,10 @@ interface LoginScreenProps {
 export const LoginScreen = ({
   onLogin,
 }: LoginScreenProps) => {
+  const dialog = useDialog();
+  const passwordInput = useRef<TextInput>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // One login per tap: a second tap while the first is still running would
@@ -32,7 +28,7 @@ export const LoginScreen = ({
     if (isSubmitting) return;
     const normalizedEmail = email.trim();
     if (!normalizedEmail || !password) {
-      Alert.alert('Login Required', 'Please enter both email and password.');
+      dialog.info({ title: 'Login Required', message: 'Please enter both email and password.' });
       return;
     }
 
@@ -48,197 +44,92 @@ export const LoginScreen = ({
 
   return (
     <View style={styles.container}>
-      <View style={styles.content}>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={styles.logoCircle}>
-          <MarkaMark size={30} />
+          <MarkaMark size={40} />
         </View>
 
-        <Text style={styles.title}>Marka</Text>
+        <Text style={styles.title} accessibilityRole="header">Marka</Text>
         <Text style={styles.subtitle}>Scan, score, and see how every learner is doing.</Text>
 
-        <View style={styles.notice}>
-          <Text style={styles.noticeText}>This mobile app is for teachers only.</Text>
-          <Text style={styles.noticeSubtext}>Principals, please use Marka on a computer.</Text>
-        </View>
-
         <View style={styles.form}>
-          <Text style={styles.inputLabel}>Email or Username</Text>
-          <TextInput
-            style={styles.input}
+          <TextField
+            label="Email or Username"
             placeholder="Enter email or username"
             value={email}
             onChangeText={setEmail}
-            placeholderTextColor="#8B99AA"
             autoCapitalize="none"
+            autoCorrect={false}
             keyboardType="email-address"
+            textContentType="username"
+            autoComplete="username"
+            returnKeyType="next"
+            onSubmitEditing={() => passwordInput.current?.focus()}
+            containerStyle={styles.field}
+          />
+          <TextField
+            ref={passwordInput}
+            label="Password"
+            placeholder="Enter password"
+            value={password}
+            onChangeText={setPassword}
+            password
+            autoCapitalize="none"
+            autoCorrect={false}
+            textContentType="password"
+            autoComplete="password"
+            returnKeyType="go"
+            onSubmitEditing={handleSubmit}
+            containerStyle={styles.field}
           />
 
-          <Text style={styles.inputLabel}>Password</Text>
-          <View style={styles.passwordInputWrap}>
-            <TextInput
-              style={styles.passwordInput}
-              placeholder="Enter password"
-              secureTextEntry={!isPasswordVisible}
-              value={password}
-              onChangeText={setPassword}
-              placeholderTextColor="#8B99AA"
-            />
-            <TouchableOpacity
-              style={styles.eyeButton}
-              onPress={() => setIsPasswordVisible((current) => !current)}
-              activeOpacity={0.8}
-            >
-              <Eye size={18} color="#718096" strokeWidth={2.2} />
-            </TouchableOpacity>
-          </View>
-
-          <TouchableOpacity style={styles.forgotButton} activeOpacity={0.8}>
-            <Text style={styles.forgotText}>Forgot Password?</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.button, isSubmitting && styles.buttonBusy]}
+          <Button
+            label={isSubmitting ? 'Logging in…' : 'Login'}
             onPress={handleSubmit}
-            disabled={isSubmitting}
-          >
-            <Text style={styles.buttonText}>{isSubmitting ? 'Logging in…' : 'Login'}</Text>
-          </TouchableOpacity>
+            loading={isSubmitting}
+            fullWidth
+            style={styles.button}
+          />
         </View>
-      </View>
+
+        <Text style={styles.notice}>
+          This mobile app is for teachers only.{'\n'}Principals, please use Marka on a computer.
+        </Text>
+      </ScrollView>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: '#FFFFFF',
-    justifyContent: 'center',
+  container: {
+    flex: 1,
+    backgroundColor: theme.colors.surface,
   },
-  content: { 
-    paddingHorizontal: 22,
-    alignItems: 'center',
+  content: {
+    flexGrow: 1,
     justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: theme.spacing.xxl,
+    paddingVertical: theme.spacing.xxxl,
   },
   logoCircle: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    backgroundColor: '#E9FBEF',
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: theme.colors.primarySoft,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 20,
+    marginBottom: theme.spacing.xl,
   },
-  title: {
-    fontSize: 26,
-    lineHeight: 32,
-    fontWeight: '900',
-    color: '#0F172A',
-    textAlign: 'center',
-  },
-  subtitle: {
-    marginTop: 7,
-    fontSize: 12,
-    color: '#64748B',
-    fontWeight: '600',
-    textAlign: 'center',
-  },
+  title: { ...theme.type.display, color: theme.colors.text, textAlign: 'center' },
+  subtitle: { ...theme.type.body, color: theme.colors.muted, textAlign: 'center', marginTop: theme.spacing.xs },
+  form: { width: '100%', maxWidth: 420, marginTop: theme.spacing.xxl },
+  field: { marginBottom: theme.spacing.lg },
+  button: { marginTop: theme.spacing.xs },
   notice: {
-    marginTop: 16,
-    paddingVertical: 9,
-    paddingHorizontal: 14,
-    borderRadius: 8,
-    backgroundColor: '#F1F5F9',
-    alignItems: 'center',
-  },
-  noticeText: {
-    fontSize: 12,
-    color: '#475569',
-    fontWeight: '700',
+    ...theme.type.caption,
+    color: theme.colors.muted,
     textAlign: 'center',
-  },
-  noticeSubtext: {
-    marginTop: 2,
-    fontSize: 11,
-    color: '#64748B',
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  form: {
-    width: '100%',
-    marginTop: 24,
-  },
-  inputLabel: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#334155',
-    marginBottom: 7,
-    marginLeft: 2,
-  },
-  input: { 
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    paddingHorizontal: 14,
-    minHeight: 46,
-    borderRadius: 8,
-    marginBottom: 18,
-    fontSize: 14,
-    color: '#111827',
-    fontWeight: '600',
-  },
-  passwordInputWrap: {
-    minHeight: 46,
-    borderRadius: 8,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  passwordInput: {
-    flex: 1,
-    paddingHorizontal: 14,
-    fontSize: 14,
-    color: '#111827',
-    fontWeight: '600',
-  },
-  eyeButton: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  forgotButton: {
-    alignSelf: 'flex-end',
-    paddingVertical: 6,
-    marginBottom: 10,
-  },
-  forgotText: {
-    color: '#22C55E',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  button: { 
-    backgroundColor: '#35C94A',
-    minHeight: 48,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 0,
-    elevation: 3,
-    shadowColor: '#35C94A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.22,
-    shadowRadius: 8,
-  },
-  buttonBusy: {
-    opacity: 0.6,
-  },
-  buttonText: { 
-    color: '#FFFFFF',
-    fontWeight: '800',
-    fontSize: 14,
+    marginTop: theme.spacing.xxl,
   },
 });

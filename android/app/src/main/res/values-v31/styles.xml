@@ -1,0 +1,11 @@
+<resources>
+
+    <!-- Android 12+ always shows the system splash screen; give it the same
+         white background and green Marka mark as the launch screen. -->
+    <style name="LaunchTheme" parent="AppTheme">
+        <item name="android:windowBackground">@drawable/launch_screen</item>
+        <item name="android:windowSplashScreenBackground">@android:color/white</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+    </style>
+
+</resources>

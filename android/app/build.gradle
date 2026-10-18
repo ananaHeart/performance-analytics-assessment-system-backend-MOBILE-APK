@@ -86,8 +86,9 @@ android {
         applicationId "com.mobileassessmentapp"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 2
-        versionName "1.1-scanner-test"
+        versionCode 3
+        // Keep in step with APP_VERSION in src/config/appInfo.ts (checked by __tests__/appVersion.test.ts).
+        versionName "1.2"
         buildConfigField "boolean", "LOCAL_V3_BACKEND", localV3Backend.toString()
         externalNativeBuild {
             cmake {

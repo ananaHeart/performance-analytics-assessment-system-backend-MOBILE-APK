@@ -1,19 +1,18 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
-  Animated, StyleSheet, View, Text, StatusBar, TouchableOpacity, BackHandler, Alert, TextInput, ScrollView, Modal
+  Animated, StyleSheet, View, Text, StatusBar, TouchableOpacity, BackHandler, TextInput, ScrollView, Modal, Linking
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import {
-  AlertCircle,
   BookOpen,
   ChevronDown,
-  CheckCircle2,
-  Home,
+  ExternalLink,
   Mail,
   RefreshCw,
   Save,
   ScanLine,
   School,
+  ShieldCheck,
   UserCircle,
   X,
 } from 'lucide-react-native';
@@ -40,6 +39,34 @@ import { V3ObjectiveWorkflowModal } from './src/components/V3ObjectiveWorkflowMo
 import { DynamicOmrScannerPrototype } from './src/prototypes/v3DynamicOmrScanner/DynamicOmrScannerPrototype';
 import { V3LoginFlow } from './src/components/V3LoginFlow';
 import { V3ServerWakingNotice } from './src/components/V3ServerWakingNotice';
+import {
+  Avatar,
+  Badge,
+  Banner,
+  Button,
+  Card,
+  DialogProvider,
+  EmptyState,
+  ListRow,
+  ScreenHeader,
+  TabBar,
+  TabHeader,
+  ToastProvider,
+  useDialog,
+  useToast,
+  type TabBarItem,
+} from './src/components/ui';
+import { theme } from './src/theme/tokens';
+import {
+  APP_CREDIT,
+  APP_DISPLAY_NAME,
+  APP_VERSION,
+  CONTACT_URL,
+  PRIVACY_NOTICE_URL,
+  USER_GUIDE_URL,
+} from './src/config/appInfo';
+import { V3MobileNetworkError } from './src/services/v3/mobileReadClient';
+import { V3AuthNetworkError } from './src/services/v3/authClient';
 import { initV2Database } from './src/database/v2/database';
 import {
   getV2ClassesByTeacher,
@@ -99,15 +126,52 @@ const mapV3Assessments = (
     storage_version: 'v3',
   }));
 
-const App = (): React.JSX.Element => {
+type RefreshSource = 'button' | 'pull';
+type MainTab = 'CLASSES' | 'ANALYTICS' | 'PROFILE';
+
+const MAIN_TABS: TabBarItem<MainTab>[] = [
+  { key: 'CLASSES', label: 'Classes', icon: School },
+  { key: 'ANALYTICS', label: 'Synchronization', icon: RefreshCw },
+  { key: 'PROFILE', label: 'Profile', icon: UserCircle },
+];
+
+// A request that never reached the server (no signal, airplane mode), as
+// opposed to the server answering with an error.
+const isNetworkFailure = (error: unknown): boolean =>
+  (error instanceof V3MobileNetworkError && error.code === 'NETWORK_UNAVAILABLE')
+  || error instanceof V3AuthNetworkError
+  || (error instanceof TypeError && /network request failed/i.test(error.message));
+
+// Synced / Unsynced / No Records for a V3 class, from the results saved on
+// this phone: anything saved but not yet sent makes the class "Unsynced".
+const v3ClassStatusLabel = (snapshot: V3OfflineDiagnosticSnapshot, classItem: any): string => {
+  let hasOfficial = false;
+  for (const assessment of snapshot.assessments) {
+    if (assessment.classAssignmentId !== classItem.class_assignment_id) continue;
+    const students = getV3ObjectiveStudents(assessment.testAssignmentId, classItem.class_id);
+    if (students.some(student => student.operationStage !== null && student.officialScore === null)) {
+      return 'Unsynced';
+    }
+    hasOfficial = hasOfficial || students.some(student => student.officialScore !== null);
+  }
+  return hasOfficial ? 'Synced' : 'No Records';
+};
+
+const AppContent = (): React.JSX.Element => {
   type AuthenticatedTeacher = LoginResponse;
+  const dialog = useDialog();
+  const showToast = useToast();
   type AssessmentAnalyticsState = {
     competencyPerformance: any[];
     itemAnalysis: any[];
   };
 
   const [view, setView] = useState<'LOGIN' | 'CLASSES' | 'TESTS' | 'CHECKING'>('LOGIN');
-  const [activeTab, setActiveTab] = useState<'CLASSES' | 'ANALYTICS' | 'PROFILE'>('CLASSES');
+  const [activeTab, setActiveTab] = useState<MainTab>('CLASSES');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const refreshInProgressRef = useRef(false);
+  // Set when a download fails for lack of a connection; cleared by the next one that works.
+  const [isOffline, setIsOffline] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [teacher, setTeacher] = useState<AuthenticatedTeacher | null>(null);
   const [v1SessionAvailable, setV1SessionAvailable] = useState(false);
@@ -449,22 +513,17 @@ const App = (): React.JSX.Element => {
   }, [activeTab, isLoggedIn, view, refreshData]);
 
   const handleReset = () => {
-  Alert.alert(
-    "Reset All Data?",
-    "This will delete all student scores for this demo. Are you sure?",
-    [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Yes, Reset",
-        style: "destructive",
-        onPress: () => {
-          resetAllScores();
-          refreshData(); // I-refresh ang UI agad para mag-zero ang scores
-          Alert.alert("Success", "All scores have been wiped.");
-        }
-      }
-    ]
-  );
+  dialog.confirm({
+    title: "Reset All Data?",
+    message: "This will delete all student scores for this demo. Are you sure?",
+    confirmLabel: "Yes, Reset",
+    destructive: true,
+    onConfirm: () => {
+      resetAllScores();
+      refreshData(); // I-refresh ang UI agad para mag-zero ang scores
+      dialog.info({ title: "Success", message: "All scores have been wiped." });
+    },
+  });
 };
 
 
@@ -546,7 +605,7 @@ const App = (): React.JSX.Element => {
       const authenticatedTeacher = v1Teacher || v2Teacher;
       if (!authenticatedTeacher) {
         if (accessIssue) {
-          Alert.alert(accessIssue.title, accessIssue.message);
+          dialog.info({ title: accessIssue.title, message: accessIssue.message });
           return;
         }
 
@@ -583,7 +642,7 @@ const App = (): React.JSX.Element => {
     } catch (error) {
       console.error('Backend login failed:', error);
       const message = error instanceof Error ? error.message : 'Unable to log in with the backend.';
-      Alert.alert('Login Error', message);
+      dialog.info({ title: 'Login Error', message });
     }
   };
 
@@ -766,7 +825,9 @@ const App = (): React.JSX.Element => {
     }
   };
 
-  const showSyncStatusMessage = (message: string) => {
+  // A refresh started by pulling the list down reports back in a toast; the
+  // refresh button and the uploads keep the "Sync Status" dialog.
+  const showSyncStatusMessage = (message: string, source: RefreshSource = 'button') => {
     let tone: 'success' | 'error' | 'partial' | 'info' = 'info';
     if (message.startsWith('Download failed.') || message.startsWith('Upload failed.')) {
       tone = 'error';
@@ -777,7 +838,13 @@ const App = (): React.JSX.Element => {
     }
 
     setSyncStatusBanner({ tone, message });
-    Alert.alert('Sync Status', message);
+    if (source === 'pull') {
+      showToast(tone === 'error'
+        ? { variant: 'error', message, onRetry: () => { handleDownloadSync('pull'); } }
+        : { variant: 'notice', message });
+      return;
+    }
+    dialog.info({ title: 'Sync Status', message });
   };
 
   const buildUploadStatusMessage = (summary: {
@@ -863,24 +930,19 @@ const App = (): React.JSX.Element => {
     const checkedStudents = updatedStatus?.checkedStudents ?? 1;
     const totalStudents = updatedStatus?.totalStudents ?? roster.length;
 
-    Alert.alert(
-      'Checking Saved',
-      `The current student's responses have been saved locally.\n\nChecked students: ${checkedStudents} of ${totalStudents}.\n\nYou may return to this assessment later to continue checking.`,
-      [
-        {
-          text: 'OK',
-          onPress: () => {
-            setSaveFeedback('');
-            setSelectedTest(null);
-            setSelectedStudent(null);
-            setSelectedTestStatus(null);
-            setRoster([]);
-            setStudentSearch('');
-            setView('TESTS');
-          },
-        },
-      ],
-    );
+    dialog.info({
+      title: 'Checking Saved',
+      message: `The current student's responses have been saved locally.\n\nChecked students: ${checkedStudents} of ${totalStudents}.\n\nYou may return to this assessment later to continue checking.`,
+      onClose: () => {
+        setSaveFeedback('');
+        setSelectedTest(null);
+        setSelectedStudent(null);
+        setSelectedTestStatus(null);
+        setRoster([]);
+        setStudentSearch('');
+        setView('TESTS');
+      },
+    });
   };
 
   const handleSaveAndNextStudent = () => {
@@ -900,10 +962,15 @@ const App = (): React.JSX.Element => {
     setView('TESTS');
   };
 
-  const handleDownloadSync = async () => {
+  // The refresh button and pull-to-refresh on the Classes and assessment lists.
+  const handleDownloadSync = async (source: RefreshSource = 'button') => {
+    if (refreshInProgressRef.current) return;
+    refreshInProgressRef.current = true;
+    setIsRefreshing(true);
+    const report = (message: string) => showSyncStatusMessage(message, source);
     try {
       if (activeTeacherId == null) {
-        Alert.alert('Sync Error', 'Teacher account is not available. Please log in again.');
+        dialog.info({ title: 'Sync Error', message: 'Teacher account is not available. Please log in again.' });
         return;
       }
 
@@ -913,11 +980,12 @@ const App = (): React.JSX.Element => {
             V3_BASE_URL,
             v3Session,
           );
+          setIsOffline(false);
           setV3Snapshot(nextSnapshot);
           setLastSyncAt(nextSnapshot.activeSnapshot
             ? new Date(nextSnapshot.activeSnapshot.committedAt).getTime()
             : Date.now());
-          showSyncStatusMessage(
+          report(
             `V3 download complete. Classes: ${nextSnapshot.counts.classes}, students: ${nextSnapshot.counts.students}, assessments: ${nextSnapshot.counts.testAssignments}.`,
           );
         } catch (error) {
@@ -928,8 +996,14 @@ const App = (): React.JSX.Element => {
             setSelectedClass(null);
             setSelectedTest(null);
             setView('LOGIN');
-            Alert.alert('Session Expired', 'Your V3 session expired or was rejected. Sign in again. Downloaded data remains on this phone.');
+            dialog.info({
+              title: 'Session Expired',
+              message: 'Your V3 session expired or was rejected. Sign in again. Downloaded data remains on this phone.',
+            });
             return;
+          }
+          if (isNetworkFailure(error)) {
+            setIsOffline(true);
           }
           throw error;
         }
@@ -981,15 +1055,18 @@ const App = (): React.JSX.Element => {
       ].filter((warning): warning is string => Boolean(warning));
 
       if (summaries.length === 0) {
-        showSyncStatusMessage(`Download failed. ${warnings.join(' ') || 'No backend download path is available.'}`);
+        report(`Download failed. ${warnings.join(' ') || 'No backend download path is available.'}`);
       } else if (warnings.length > 0) {
-        showSyncStatusMessage(`Download partially successful. ${summaries.join(' ')} ${warnings.join(' ')}`);
+        report(`Download partially successful. ${summaries.join(' ')} ${warnings.join(' ')}`);
       } else {
-        showSyncStatusMessage(`Downloaded successfully. ${summaries.join(' ')}`);
+        report(`Downloaded successfully. ${summaries.join(' ')}`);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to download sync data.';
-      showSyncStatusMessage(`Download failed. ${message}`);
+      report(`Download failed. ${message}`);
+    } finally {
+      refreshInProgressRef.current = false;
+      setIsRefreshing(false);
     }
   };
 
@@ -997,12 +1074,12 @@ const App = (): React.JSX.Element => {
     let uploadStarted = false;
     try {
       if (activeTeacherId == null) {
-        Alert.alert('Sync Error', 'Teacher account is not available. Please log in again.');
+        dialog.info({ title: 'Sync Error', message: 'Teacher account is not available. Please log in again.' });
         return;
       }
 
       if (selectedTest?.test_id == null) {
-        Alert.alert('Select Test', 'Select a test first before uploading current results.');
+        dialog.info({ title: 'Select Test', message: 'Select a test first before uploading current results.' });
         return;
       }
 
@@ -1070,7 +1147,7 @@ const App = (): React.JSX.Element => {
     let uploadStarted = false;
     try {
       if (activeTeacherId == null) {
-        Alert.alert('Sync Error', 'Teacher account is not available. Please log in again.');
+        dialog.info({ title: 'Sync Error', message: 'Teacher account is not available. Please log in again.' });
         return;
       }
 
@@ -1135,7 +1212,7 @@ const App = (): React.JSX.Element => {
     let uploadStarted = false;
     try {
       if (activeTeacherId == null) {
-        Alert.alert('Sync Error', 'Teacher account is not available. Please log in again.');
+        dialog.info({ title: 'Sync Error', message: 'Teacher account is not available. Please log in again.' });
         return;
       }
 
@@ -1219,18 +1296,15 @@ const App = (): React.JSX.Element => {
   };
 
   const handleClearLocalData = () => {
-    Alert.alert(
-      'Clear Local Data?',
-      'This will delete local classes, students, tests, test parts, competencies, and offline checking results from this phone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear Local Data',
-          style: 'destructive',
-          onPress: () => {
+    dialog.confirm({
+      title: 'Clear Local Data?',
+      message: 'This will delete local classes, students, tests, test parts, competencies, and offline checking results from this phone.',
+      confirmLabel: 'Clear Local Data',
+      destructive: true,
+      onConfirm: () => {
             const result = clearLocalTestingData();
             if (!result.success) {
-              Alert.alert('Clear Failed', result.error || 'Unable to clear local testing data.');
+              dialog.info({ title: 'Clear Failed', message: result.error || 'Unable to clear local testing data.' });
               return;
             }
 
@@ -1251,11 +1325,9 @@ const App = (): React.JSX.Element => {
             setProfileMode('PROFILE');
             refreshData();
 
-            Alert.alert('Local Data Cleared', 'Local testing data has been cleared successfully.');
-          },
-        },
-      ],
-    );
+            dialog.info({ title: 'Local Data Cleared', message: 'Local testing data has been cleared successfully.' });
+      },
+    });
   };
 
   const handleLogout = () => {
@@ -1288,6 +1360,24 @@ const App = (): React.JSX.Element => {
     setAnalyticsData({ competencyPerformance: [], itemAnalysis: [] });
     setSelectedTestStatus(null);
     setRosterDebug(null);
+    setIsOffline(false);
+  };
+
+  // Logging out only clears the sign-in: results saved on this phone (sent or
+  // not) stay in its database and can be sent after logging in again.
+  const confirmLogout = () => {
+    dialog.confirm({
+      title: 'Log out?',
+      message: 'Your saved results stay on this phone.',
+      confirmLabel: 'Log out',
+      onConfirm: handleLogout,
+    });
+  };
+
+  const openExternalLink = (url: string) => {
+    Linking.openURL(url).catch(() => {
+      showToast({ variant: 'error', message: "Couldn't open the link. Check that a browser or email app is installed." });
+    });
   };
 
   const totalStudentsChecked = stats.gradedCount;
@@ -1334,7 +1424,7 @@ const App = (): React.JSX.Element => {
         : (selectedTestStatus?.checkedStudents ?? 0) > 0
           ? 'Unsynced'
           : 'No checked results yet';
-  const classCardData = classes.map((item: any) => {
+  const classCardData = useMemo(() => classes.map((item: any) => {
     const debugInfo = item.storage_version === 'v2' || item.storage_version === 'v3'
       ? null
       : getRosterDebugInfo(item.class_id);
@@ -1344,9 +1434,14 @@ const App = (): React.JSX.Element => {
       student_count: item.storage_version === 'v2' || item.storage_version === 'v3'
         ? Number(item.student_count ?? 0)
         : debugInfo?.localStudentsFound ?? null,
+      statusLabel: item.storage_version === 'v3' && v3Snapshot
+        ? v3ClassStatusLabel(v3Snapshot, item)
+        : undefined,
       offlineLabel: 'Available offline',
     };
-  });
+    // dataVersion: re-read the saved results after a scan is saved or sent.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [classes, v3Snapshot, dataVersion]);
   const testCardData = tests.map((item: any) => {
     const syncStatus = selectedClass?.class_id != null
       ? item.storage_version === 'v3'
@@ -1408,9 +1503,6 @@ const App = (): React.JSX.Element => {
   const teacherName = teacher
     ? [teacher.firstName, teacher.lastName].filter(Boolean).join(' ') || 'Teacher'
     : 'Teacher';
-  const teacherInitial = teacherName.trim().charAt(0).toUpperCase() || 'T';
-  const teacherRoleLabel = teacher?.role ? teacher.role.charAt(0).toUpperCase() + teacher.role.slice(1).toLowerCase() : 'Teacher';
-  const teacherStatusLabel = teacher?.status ? teacher.status.charAt(0).toUpperCase() + teacher.status.slice(1).toLowerCase() : 'Active';
   const classLastSyncedMap = v1SessionAvailable
     ? getClassLastSyncedMap(activeTeacherId) as Record<number, string | null>
     : {};
@@ -1468,37 +1560,31 @@ const App = (): React.JSX.Element => {
     // 1. CLASSES VIEW - Show list of classes for the teacher
     if (view === 'CLASSES') {
       return (
-        <View style={styles.screenContainer}>
-          <ClassList data={classCardData} onSelect={handleSelectClass} onSync={handleDownloadSync} />
-        </View>
+        <ClassList
+          data={classCardData}
+          onSelect={handleSelectClass}
+          onRefresh={source => { handleDownloadSync(source); }}
+          refreshing={isRefreshing}
+          offline={isOffline}
+        />
       );
     }
 
     // 2. TESTS VIEW - Show tests for the selected class
     if (view === 'TESTS' && selectedClass) {
       return (
-        <View style={styles.screenContainer}>
-          <View style={styles.testsHeader}>
-            <TouchableOpacity
-              style={styles.backButton}
-              onPress={() => {
-                setSelectedClass(null);
-                setView('CLASSES');
-              }}
-            >
-              <Text style={styles.backButtonText}>‹</Text>
-            </TouchableOpacity>
-            <View style={styles.testsHeaderContent}>
-              <Text style={styles.testsTitle}>
-                {[selectedClass.grade_level_name, selectedClass.section_name].filter(Boolean).join(' - ') || 'Selected Class'}
-              </Text>
-              <Text style={styles.testsSubtitle}>
-                Select Assessment
-              </Text>
-            </View>
-          </View>
-          <TestList data={testCardData} onSelect={handleSelectTest} />
-        </View>
+        <TestList
+          classItem={selectedClass}
+          data={testCardData}
+          onSelect={handleSelectTest}
+          onBack={() => {
+            setSelectedClass(null);
+            setView('CLASSES');
+          }}
+          onRefresh={() => { handleDownloadSync('pull'); }}
+          refreshing={isRefreshing}
+          offline={isOffline}
+        />
       );
     }
 
@@ -1808,10 +1894,10 @@ const App = (): React.JSX.Element => {
 
                 if (!wasAlreadyChecked && updatedRoster.length > 0 && updatedRoster.every(student => Number(student.is_checked) === 1)) {
                   setTimeout(() => {
-                    Alert.alert(
-                      'Checking Complete',
-                      `All ${updatedRoster.length} student results are saved on this device.`,
-                    );
+                    dialog.info({
+                      title: 'Checking Complete',
+                      message: `All ${updatedRoster.length} student results are saved on this device.`,
+                    });
                   }, 250);
                 }
               }}
@@ -1827,197 +1913,162 @@ const App = (): React.JSX.Element => {
   const renderProfile = () => {
     if (profileMode === 'SYNC') {
       return (
-        <ScrollView style={styles.profileContainer} contentContainerStyle={styles.syncScreenContent} showsVerticalScrollIndicator={false}>
-          <View style={styles.profileHeaderBar}>
-            <View style={styles.profileHeaderSpacer} />
-            <Text style={styles.profileHeaderTitle}>Synchronization</Text>
-            <View style={styles.profileHeaderSpacer} />
-          </View>
-
-          <Text style={styles.syncIntroText}>Upload recorded assessment results to the server.</Text>
-
-          <View style={styles.syncClassList}>
+        <View style={styles.tabScreen}>
+          <ScreenHeader
+            title="Synchronization"
+            subtitle="Upload recorded assessment results to the server."
+            onBack={() => setProfileMode('PROFILE')}
+            backLabel="Back to Profile"
+            busy={activeUploadKey !== null}
+          />
+          <ScrollView contentContainerStyle={styles.tabContent} showsVerticalScrollIndicator={false}>
             {syncClassCards.length > 0 ? (
               syncClassCards.map((item: any) => {
-                const isUnsynced = item.statusLabel === 'Unsynced';
-                const isSynced = item.statusLabel === 'Synced';
                 const isUploading = activeUploadKey === `class:${item.class_id}` || activeUploadKey === 'all';
                 const classLabel = [item.grade_level_name, item.section_name].filter(Boolean).join(' - ') || item.subject_name || 'Class';
+                const statusTone = item.statusLabel === 'Unsynced' ? 'warning' : item.statusLabel === 'Synced' ? 'success' : 'neutral';
 
                 return (
-                  <TouchableOpacity
+                  <Card
                     key={item.class_id}
-                    style={[
-                      styles.syncClassCard,
-                      activeUploadKey !== null && styles.syncClassCardDisabled,
-                    ]}
                     onPress={() => handleUploadClassSync(item)}
-                    activeOpacity={0.9}
                     disabled={activeUploadKey !== null}
+                    accessibilityLabel={`${classLabel}, ${item.subjectLabel}, ${isUploading ? 'Uploading' : item.statusLabel}`}
+                    accessibilityHint="Uploads this class's checked results"
                   >
-                    <View style={styles.syncClassMainRow}>
-                      <View style={styles.syncClassTitleBlock}>
-                        <View style={styles.syncClassTitleRow}>
-                          <School size={14} color="#64748B" strokeWidth={2.4} />
-                          <Text style={styles.syncClassTitle}>{classLabel}</Text>
-                        </View>
-                        <View style={styles.syncSubjectPill}>
-                          <Text style={styles.syncSubjectPillText}>{item.subjectLabel}</Text>
-                        </View>
+                    <View style={styles.syncCardHeader}>
+                      <View style={styles.flexOne}>
+                        <Text style={styles.cardTitle}>{classLabel}</Text>
+                        <Text style={styles.caption}>{item.subjectLabel}</Text>
                       </View>
-                      <View
-                        style={[
-                          styles.syncStatusPill,
-                          isUnsynced && styles.syncStatusPillUnsynced,
-                          !isUnsynced && !isSynced && styles.syncStatusPillEmpty,
-                        ]}
-                      >
-                        {isUnsynced ? (
-                          <AlertCircle size={12} color="#F97316" strokeWidth={2.5} />
-                        ) : (
-                          <CheckCircle2 size={12} color={isSynced ? '#16A34A' : '#64748B'} strokeWidth={2.5} />
-                        )}
-                        <Text
-                          style={[
-                            styles.syncStatusPillText,
-                            isUnsynced && styles.syncStatusPillTextUnsynced,
-                            !isUnsynced && !isSynced && styles.syncStatusPillTextEmpty,
-                          ]}
-                        >
-                          {isUploading ? 'Uploading' : item.statusLabel}
-                        </Text>
-                      </View>
+                      <Badge label={isUploading ? 'Uploading' : item.statusLabel} tone={isUploading ? 'info' : statusTone} />
                     </View>
-
-                    <View style={styles.syncClassMetaBlock}>
-                      <View style={styles.syncInfoRow}>
-                        <Text style={styles.syncInfoLabel}>Assessments</Text>
-                        <Text style={styles.syncInfoValue}>{item.totalAssessments}</Text>
+                    {[
+                      ['Assessments', item.totalAssessments],
+                      ['Students Checked', item.checkedStudents],
+                      ['Pending Upload', item.unsyncedStudents],
+                      ['Last Sync', item.exactLastSync],
+                    ].map(([label, value]) => (
+                      <View key={label} style={styles.syncInfoRow}>
+                        <Text style={styles.syncInfoLabel}>{label}</Text>
+                        <Text style={styles.syncInfoValue}>{value}</Text>
                       </View>
-                      <View style={styles.syncInfoRow}>
-                        <Text style={styles.syncInfoLabel}>Students Checked</Text>
-                        <Text style={styles.syncInfoValue}>{item.checkedStudents}</Text>
-                      </View>
-                      <View style={styles.syncInfoRow}>
-                        <Text style={styles.syncInfoLabel}>Pending Upload</Text>
-                        <Text style={styles.syncInfoValue}>{item.unsyncedStudents}</Text>
-                      </View>
-                      <View style={styles.syncInfoRow}>
-                        <Text style={styles.syncInfoLabel}>Last Sync</Text>
-                        <Text style={styles.syncInfoValue}>{item.exactLastSync}</Text>
-                      </View>
-
-                      {item.testPreview.length > 0 ? (
-                        <View style={styles.syncAssessmentList}>
-                          {item.testPreview.map((testName: string) => (
-                            <Text key={testName} style={styles.syncClassMeta}>{testName}</Text>
-                          ))}
-                        </View>
-                      ) : (
-                        <Text style={styles.syncClassMeta}>No downloaded assessments</Text>
-                      )}
-                    </View>
-                  </TouchableOpacity>
+                    ))}
+                    {item.testPreview.length > 0 ? (
+                      item.testPreview.map((testName: string) => (
+                        <Text key={testName} style={styles.caption}>{testName}</Text>
+                      ))
+                    ) : (
+                      <Text style={styles.caption}>No downloaded assessments</Text>
+                    )}
+                  </Card>
                 );
               })
             ) : (
-              <View style={styles.syncEmptyCard}>
-                <Text style={styles.syncEmptyTitle}>No classes available</Text>
-                <Text style={styles.syncEmptyText}>Download assigned data first from the Classes screen.</Text>
-              </View>
+              <EmptyState
+                icon={School}
+                title="No classes available"
+                message="Download assigned data first from the Classes screen."
+              />
             )}
-          </View>
 
-          {syncStatusBanner ? (
-            <View
-              style={[
-                styles.syncStatusBanner,
-                syncStatusBanner.tone === 'error' && styles.syncStatusBannerError,
-                syncStatusBanner.tone === 'partial' && styles.syncStatusBannerPartial,
-                syncStatusBanner.tone === 'success' && styles.syncStatusBannerSuccess,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.syncStatusBannerText,
-                  syncStatusBanner.tone === 'error' && styles.syncStatusBannerTextError,
-                  syncStatusBanner.tone === 'partial' && styles.syncStatusBannerTextPartial,
-                  syncStatusBanner.tone === 'success' && styles.syncStatusBannerTextSuccess,
-                ]}
-              >
-                {syncStatusBanner.message}
-              </Text>
-            </View>
-          ) : null}
-
-          <TouchableOpacity style={styles.backHomeButton} onPress={() => setProfileMode('PROFILE')} activeOpacity={0.9}>
-            <Home size={15} color="#FFFFFF" strokeWidth={2.5} />
-            <Text style={styles.primaryProfileButtonText}>Back to Home</Text>
-          </TouchableOpacity>
-        </ScrollView>
+            {syncStatusBanner ? (
+              <Banner
+                tone={
+                  syncStatusBanner.tone === 'error'
+                    ? 'danger'
+                    : syncStatusBanner.tone === 'partial'
+                      ? 'warning'
+                      : syncStatusBanner.tone === 'success'
+                        ? 'success'
+                        : 'info'
+                }
+                message={syncStatusBanner.message}
+              />
+            ) : null}
+          </ScrollView>
+        </View>
       );
     }
 
     return (
-      <ScrollView style={styles.profileContainer} contentContainerStyle={styles.profileContent} showsVerticalScrollIndicator={false}>
-        <View style={styles.profileHeaderBar}>
-          <View style={styles.profileHeaderSpacer} />
-          <Text style={styles.profileHeaderTitle}>Profile</Text>
-          <View style={styles.profileHeaderSpacer} />
-        </View>
-
-        <View style={styles.profileHero}>
-          <View style={styles.profileAvatarWrap}>
-            <View style={styles.avatarCircle}>
-              <UserCircle size={40} color="#F97316" strokeWidth={2.4} />
-            </View>
-            <View style={styles.profileOnlineDot} />
-          </View>
-          <Text style={styles.profileName}>{teacherName}</Text>
-          <Text style={styles.profileDepartment}>{teacherRoleLabel}</Text>
-          <Text style={styles.profileSchool}>{teacherStatusLabel} account</Text>
-        </View>
-
-        <Text style={styles.profileSectionTitle}>Account Details</Text>
-
-        <View style={styles.accountDetailsList}>
-          <View style={styles.accountDetailRow}>
-            <View style={styles.accountDetailIcon}>
-              <Mail size={18} color="#94A3B8" strokeWidth={2.3} />
-            </View>
-            <View style={styles.accountDetailCopy}>
-              <Text style={styles.accountDetailLabel}>Email Address</Text>
-              <Text style={styles.accountDetailValue}>{teacher?.email || 'No email available'}</Text>
+      <View style={styles.tabScreen}>
+        <TabHeader title="Profile" />
+        <ScrollView contentContainerStyle={styles.tabContent} showsVerticalScrollIndicator={false}>
+          <View style={styles.profileHero}>
+            <Avatar name={teacherName} />
+            <View style={styles.flexOne}>
+              <Text style={styles.profileName}>{teacherName}</Text>
+              {teacher?.email ? <Text style={styles.profileEmail}>{teacher.email}</Text> : null}
+              <Badge label="Teacher" tone="neutral" style={styles.profileBadge} />
             </View>
           </View>
 
-          <View style={styles.accountDetailRow}>
-            <View style={styles.accountDetailIcon}>
-              <BookOpen size={18} color="#94A3B8" strokeWidth={2.3} />
-            </View>
-            <View style={styles.accountDetailCopy}>
-              <Text style={styles.accountDetailLabel}>Classes Assigned</Text>
-              <Text style={styles.accountDetailValue}>{displayedLocalCounts.classes} Classes Assigned</Text>
-            </View>
-          </View>
+          <Text style={styles.sectionLabel} accessibilityRole="header">Account Details</Text>
+          <Card padded={false}>
+            <ListRow
+              bordered={false}
+              title="Email Address"
+              subtitle={teacher?.email || 'No email available'}
+              left={<Mail size={theme.iconSize.small} color={theme.colors.muted} strokeWidth={2.2} />}
+            />
+            <ListRow
+              bordered={false}
+              divider
+              title="Classes Assigned"
+              subtitle={`${displayedLocalCounts.classes} Classes Assigned`}
+              left={<BookOpen size={theme.iconSize.small} color={theme.colors.muted} strokeWidth={2.2} />}
+            />
+            {!v3Session ? (
+              <ListRow
+                bordered={false}
+                divider
+                title="Synchronization"
+                subtitle={`Last sync: ${lastSyncDisplay}`}
+                left={<RefreshCw size={theme.iconSize.small} color={theme.colors.muted} strokeWidth={2.2} />}
+                right="chevron"
+                onPress={() => setProfileMode('SYNC')}
+              />
+            ) : null}
+          </Card>
 
-          {!v3Session ? (
-            <TouchableOpacity style={styles.accountDetailRow} onPress={() => setProfileMode('SYNC')} activeOpacity={0.85}>
-              <View style={styles.accountDetailIcon}>
-                <RefreshCw size={18} color="#94A3B8" strokeWidth={2.3} />
-              </View>
-              <View style={styles.accountDetailCopy}>
-                <Text style={styles.accountDetailLabel}>Synchronization</Text>
-                <Text style={styles.syncDetailValue}>Last sync: {lastSyncDisplay}</Text>
-              </View>
-            </TouchableOpacity>
-          ) : null}
-        </View>
+          <Text style={styles.sectionLabel} accessibilityRole="header">Help</Text>
+          <Card padded={false}>
+            {[
+              { title: 'User guide', icon: BookOpen, url: USER_GUIDE_URL },
+              { title: 'Privacy notice', icon: ShieldCheck, url: PRIVACY_NOTICE_URL },
+              { title: 'Contact us', icon: Mail, url: CONTACT_URL },
+            ].map(({ title, icon: Icon, url }, index) => (
+              <ListRow
+                key={title}
+                bordered={false}
+                divider={index > 0}
+                title={title}
+                left={<Icon size={theme.iconSize.small} color={theme.colors.primary} strokeWidth={2.2} />}
+                right={<ExternalLink size={theme.iconSize.small} color={theme.colors.muted} strokeWidth={2.2} />}
+                accessibilityRole="link"
+                accessibilityHint={title === 'Contact us' ? 'Opens your email app' : 'Opens in your browser'}
+                onPress={() => openExternalLink(url)}
+              />
+            ))}
+          </Card>
 
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout} activeOpacity={0.9}>
-          <Text style={styles.logoutText}>Logout</Text>
-        </TouchableOpacity>
-      </ScrollView>
+          <Text style={styles.sectionLabel} accessibilityRole="header">About</Text>
+          <Card>
+            <Text style={styles.cardTitle}>{APP_DISPLAY_NAME}</Text>
+            <Text style={styles.aboutText}>Version {APP_VERSION}</Text>
+            <Text style={styles.aboutText}>{APP_CREDIT}</Text>
+          </Card>
+
+          <Button
+            label="Log out"
+            variant="dangerOutline"
+            fullWidth
+            onPress={confirmLogout}
+            style={styles.logoutButton}
+          />
+        </ScrollView>
+      </View>
     );
   };
 
@@ -2052,206 +2103,86 @@ const App = (): React.JSX.Element => {
     return renderClassesFlow();
   };
 
-  const renderNavIcon = (tab: 'CLASSES' | 'ANALYTICS' | 'PROFILE', color: string) => {
-    if (tab === 'CLASSES') {
-      return <School size={19} color={color} strokeWidth={2.4} style={styles.navIcon} />;
-    }
-
-    if (tab === 'ANALYTICS') {
-      return <RefreshCw size={19} color={color} strokeWidth={2.4} style={styles.navIcon} />;
-    }
-
-    return <UserCircle size={20} color={color} strokeWidth={2.3} style={styles.navIcon} />;
-  };
-
-  const renderNavItem = (tab: 'CLASSES' | 'ANALYTICS' | 'PROFILE', label: string) => {
-    const isActive = activeTab === tab;
-    const color = isActive ? '#34C759' : '#999999';
-
-    return (
-      <TouchableOpacity
-        key={tab}
-        style={styles.navItem}
-        onPress={() => setActiveTab(tab)}
-        activeOpacity={0.85}
-      >
-        {renderNavIcon(tab, color)}
-        <Text style={[styles.navLabel, { color }]}>{label}</Text>
-      </TouchableOpacity>
-    );
-  };
-
   return (
-    <SafeAreaProvider>
-      <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" backgroundColor="#F5F6FA" />
-        {isLoggedIn ? <V3ServerWakingNotice style={styles.serverWakingNotice} /> : null}
+    <>
+      {/* White behind the status bar and the gesture area, matching the white headers and tab bar. */}
+      <StatusBar barStyle="dark-content" backgroundColor={theme.colors.surface} />
+      {isLoggedIn ? <V3ServerWakingNotice style={styles.serverWakingNotice} /> : null}
 
-        {/* 1. LOGIN */}
-        {!isLoggedIn && view === 'LOGIN' && (
-          <LoginScreen key={loginFormKey} onLogin={handleLogin} />
-        )}
+      {/* 1. LOGIN */}
+      {!isLoggedIn && view === 'LOGIN' && (
+        <LoginScreen key={loginFormKey} onLogin={handleLogin} />
+      )}
 
-        <DynamicOmrScannerPrototype
-          visible={isDynamicOmrTestOpen}
-          onClose={() => setIsDynamicOmrTestOpen(false)}
+      <DynamicOmrScannerPrototype
+        visible={isDynamicOmrTestOpen}
+        onClose={() => setIsDynamicOmrTestOpen(false)}
+      />
+
+      {v3InitialLoginRequest ? (
+        <V3LoginFlow
+          key={v3InitialLoginRequest.requestId}
+          request={v3InitialLoginRequest}
+          onAuthenticated={handleV3Authenticated}
+          onClose={() => setV3InitialLoginRequest(null)}
+          onAccountRejected={() => {
+            setV3InitialLoginRequest(null);
+            setLoginFormKey(key => key + 1);
+          }}
         />
+      ) : null}
 
-        {v3InitialLoginRequest ? (
-          <V3LoginFlow
-            key={v3InitialLoginRequest.requestId}
-            request={v3InitialLoginRequest}
-            onAuthenticated={handleV3Authenticated}
-            onClose={() => setV3InitialLoginRequest(null)}
-            onAccountRejected={() => {
-              setV3InitialLoginRequest(null);
-              setLoginFormKey(key => key + 1);
-            }}
-          />
-        ) : null}
+      {v3Session && selectedTest?.storage_version === 'v3' && selectedClass ? (
+        <V3ObjectiveWorkflowModal
+          visible={isV3ObjectiveOpen}
+          session={v3Session}
+          test={selectedTest}
+          classData={selectedClass}
+          onClose={() => setIsV3ObjectiveOpen(false)}
+          onChanged={refreshData}
+          onSessionInvalid={() => {
+            setIsV3ObjectiveOpen(false);
+            setIsLoggedIn(false);
+            setTeacher(null);
+            setV3Session(null);
+            setView('LOGIN');
+            dialog.info({
+              title: 'Session Expired',
+              message: 'Sign in again. Saved V3 result operations remain on this phone.',
+            });
+          }}
+        />
+      ) : null}
 
-        {v3Session && selectedTest?.storage_version === 'v3' && selectedClass ? (
-          <V3ObjectiveWorkflowModal
-            visible={isV3ObjectiveOpen}
-            session={v3Session}
-            test={selectedTest}
-            classData={selectedClass}
-            onClose={() => setIsV3ObjectiveOpen(false)}
-            onChanged={refreshData}
-            onSessionInvalid={() => {
-              setIsV3ObjectiveOpen(false);
-              setIsLoggedIn(false);
-              setTeacher(null);
-              setV3Session(null);
-              setView('LOGIN');
-              Alert.alert(
-                'Session Expired',
-                'Sign in again. Saved V3 result operations remain on this phone.',
-              );
-            }}
-          />
-        ) : null}
-
-        {isLoggedIn && (
-          <View style={styles.mainLayout}>
-            <View style={styles.contentArea}>{renderMainContent()}</View>
-            {view !== 'CHECKING' && view !== 'TESTS' && !(activeTab === 'PROFILE' && profileMode === 'SYNC') && (
-              <View style={styles.bottomNav}>
-                {renderNavItem('CLASSES', 'Classes')}
-                {renderNavItem('ANALYTICS', 'Synchronization')}
-                {renderNavItem('PROFILE', 'Profile')}
-              </View>
-            )}
-          </View>
-        )}
-      </SafeAreaView>
-    </SafeAreaProvider>
+      {isLoggedIn && (
+        <View style={styles.mainLayout}>
+          <View style={styles.contentArea}>{renderMainContent()}</View>
+          {view !== 'CHECKING' && view !== 'TESTS' && !(activeTab === 'PROFILE' && profileMode === 'SYNC') && (
+            <TabBar tabs={MAIN_TABS} activeKey={activeTab} onChange={setActiveTab} />
+          )}
+        </View>
+      )}
+    </>
   );
 };
 
+const App = (): React.JSX.Element => (
+  <SafeAreaProvider>
+    <SafeAreaView style={styles.container}>
+      <DialogProvider>
+        <ToastProvider>
+          <AppContent />
+        </ToastProvider>
+      </DialogProvider>
+    </SafeAreaView>
+  </SafeAreaProvider>
+);
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F6FA' },
-  mainLayout: { flex: 1 },
+  container: { flex: 1, backgroundColor: theme.colors.surface },
+  mainLayout: { flex: 1, backgroundColor: theme.colors.bg },
   contentArea: { flex: 1 },
-  screenContainer: { flex: 1, backgroundColor: '#F5F6FA' },
-  whiteHeader: {
-    paddingHorizontal: 8,
-    paddingTop: 6,
-    paddingBottom: 8,
-    backgroundColor: '#F5F6FA',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E8EAEE',
-  },
-  headerTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    gap: 12,
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  headerBackButton: {
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerBackIcon: {
-    color: '#374151',
-    fontSize: 23,
-    fontWeight: '900',
-    lineHeight: 25,
-  },
-  headerActionButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 4,
-  },
-  headerActionIcon: {
-    color: '#374151',
-    fontSize: 21,
-    fontWeight: '800',
-    lineHeight: 24,
-  },
-  headerActionText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '700',
-    textAlign: 'center',
-    marginTop: 2,
-  },
-  testsHeader: {
-    paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 24,
-    backgroundColor: '#F5F6FA',
-  },
-  backButton: {
-    width: 42,
-    height: 38,
-    justifyContent: 'center',
-    alignItems: 'flex-start',
-    marginLeft: 0,
-  },
-  backButtonText: {
-    fontSize: 40,
-    fontWeight: '900',
-    color: '#111827',
-    lineHeight: 39,
-  },
-  testsHeaderContent: {
-    marginTop: 22,
-    alignItems: 'center',
-  },
-  testsTitle: {
-    fontSize: 24,
-    fontWeight: '900',
-    color: '#0F7A34',
-    marginBottom: 2,
-    textAlign: 'center',
-  },
-  testsSubtitle: {
-    fontSize: 16,
-    color: '#4B5563',
-    fontWeight: '800',
-    textAlign: 'center',
-  },
-  logoText: { fontSize: 28, fontWeight: '900', color: '#1F2937', letterSpacing: -1 },
-  logoAccent: { color: '#34C759' },
-  titleText: { fontSize: 15, fontWeight: '900', color: '#374151' },
-  subHeader: { color: '#6B7280', fontSize: 14, marginTop: 4, lineHeight: 20 },
-  connectionText: {
-    color: '#374151',
-    fontSize: 13,
-    marginTop: 10,
-    fontWeight: '600',
-  },
+  screenContainer: { flex: 1, backgroundColor: theme.colors.bg },
   checkingHeader: {
     paddingHorizontal: 16,
     paddingTop: 14,
@@ -2407,7 +2338,6 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     textAlign: 'right',
   },
-  studentName: { fontSize: 18, fontWeight: '900', color: '#17261B', marginTop: 1 },
   testInfoPill: {
     flex: 1,
     minHeight: 38,
@@ -2419,7 +2349,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   testInfo: { fontSize: 16, color: '#0F7A34', marginTop: 0, fontWeight: '900' },
-  checkingMeta: { fontSize: 12, color: '#607568', marginTop: 3, fontWeight: '800' },
   currentScoreCard: {
     marginTop: 8,
     backgroundColor: '#E9CDBF',
@@ -2465,57 +2394,6 @@ const styles = StyleSheet.create({
     zIndex: 30,
     overflow: 'visible',
   },
-  checkingTopContainerExpanded: {
-    flexShrink: 0,
-    zIndex: 30,
-    overflow: 'visible',
-  },
-  checkingTopSection: {
-    backgroundColor: '#F5F6FA',
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 10,
-    gap: 9,
-    zIndex: 31,
-    overflow: 'visible',
-  },
-  checkingIdentityRow: {
-    flexDirection: 'row',
-    gap: 8,
-    alignItems: 'stretch',
-  },
-  studentIdentityBlock: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#DCEFE2',
-  },
-  scoreCard: {
-    backgroundColor: '#FFFFFF',
-    minWidth: 122,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#CBEFD7',
-    justifyContent: 'center',
-  },
-  scoreLabel: {
-    fontSize: 12,
-    color: '#0F7A34',
-    fontWeight: '800',
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
-  },
-  scoreValue: {
-    fontSize: 22,
-    fontWeight: '900',
-    color: '#0F7A34',
-    marginTop: 2,
-  },
   studentSearchSection: {
     flex: 1,
     backgroundColor: '#F5F6FA',
@@ -2534,19 +2412,7 @@ const styles = StyleSheet.create({
     zIndex: 1,
     overflow: 'visible',
   },
-  sectionLabel: {
-    color: '#607568',
-    fontSize: 10,
-    fontWeight: '800',
-    marginBottom: 2,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  studentSelectorSection: {
-    backgroundColor: '#F5F6FA',
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-  },
+  sectionLabel: { ...theme.type.label, color: theme.colors.muted, marginTop: theme.spacing.sm, textTransform: 'uppercase' },
   studentSearchInput: {
     width: '100%',
     height: 40,
@@ -2558,12 +2424,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlignVertical: 'center',
     includeFontPadding: false,
-  },
-  selectedStudentCaption: {
-    color: '#6B7280',
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 10,
   },
   studentSuggestionsSection: {
     position: 'absolute',
@@ -2617,10 +2477,6 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     fontSize: 13,
     textAlign: 'center',
-  },
-  checkingActionRow: {
-    flexDirection: 'row',
-    gap: 8,
   },
   checkingActionBar: {
     gap: 10,
@@ -2693,12 +2549,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '900',
-  },
-  saveHintText: {
-    color: '#365243',
-    fontSize: 12,
-    fontWeight: '800',
-    textAlign: 'center',
   },
   saveFeedbackBanner: {
     backgroundColor: '#E4FBE9',
@@ -2796,497 +2646,40 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 7,
   },
-  bottomNav: {
-    height: 78,
-    backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-  },
-  navItem: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  navIcon: {
-    marginBottom: 4,
-  },
-  navLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  profileContainer: {
-    flex: 1,
-    backgroundColor: '#F5F6FA',
-  },
-  profileContent: {
-    paddingHorizontal: 16,
-    paddingTop: 18,
-    paddingBottom: 28,
-  },
-  syncScreenContent: {
-    paddingHorizontal: 14,
-    paddingTop: 8,
-    paddingBottom: 28,
-  },
-  profileHeaderBar: {
-    minHeight: 38,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  profileHeaderBack: {
-    width: 36,
-    height: 36,
-    alignItems: 'flex-start',
-    justifyContent: 'center',
-  },
-  profileHeaderTitle: {
-    color: '#111827',
-    fontSize: 25,
-    fontWeight: '900',
-  },
-  profileHeaderSpacer: {
-    width: 36,
-  },
   profileHero: {
-    alignItems: 'center',
-    paddingVertical: 18,
-    paddingHorizontal: 16,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 8,
-    marginBottom: 18,
-    borderWidth: 1,
-    borderColor: '#EEF2F6',
-  },
-  profileAvatarWrap: {
-    position: 'relative',
-    marginBottom: 12,
-  },
-  avatarCircle: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    backgroundColor: '#FDEBE3',
-    borderWidth: 1,
-    borderColor: '#FDBA99',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarIcon: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: '#1E8E3E',
-  },
-  profileOnlineDot: {
-    position: 'absolute',
-    right: 2,
-    bottom: 6,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: '#35C94A',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-  },
-  profileName: {
-    fontSize: 16,
-    fontWeight: '900',
-    color: '#111827',
-  },
-  profileDepartment: {
-    fontSize: 11,
-    color: '#F97316',
-    marginTop: 3,
-    fontWeight: '800',
-  },
-  profileSchool: {
-    fontSize: 10,
-    color: '#64748B',
-    marginTop: 5,
-    fontWeight: '700',
-  },
-  profileSummaryRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 14,
-  },
-  summaryStatCard: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    paddingVertical: 18,
-    paddingHorizontal: 12,
-    alignItems: 'center',
-  },
-  summaryStatValue: {
-    color: '#1E8E3E',
-    fontSize: 26,
-    fontWeight: '800',
-  },
-  summaryStatLabel: {
-    color: '#6B7280',
-    fontSize: 11,
-    fontWeight: '700',
-    textAlign: 'center',
-    marginTop: 6,
-  },
-  profileCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 18,
-    marginBottom: 14,
-  },
-  profileSectionTitle: {
-    color: '#6B7280',
-    fontSize: 10,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 1.2,
-    marginBottom: 10,
-  },
-  accountDetailsList: {
-    gap: 11,
-    marginBottom: 18,
-  },
-  accountDetailRow: {
-    minHeight: 66,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 7,
-    borderWidth: 1,
-    borderColor: '#E8EEF4',
-    paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 11,
-  },
-  accountDetailIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 5,
-    backgroundColor: '#F8FAFC',
+    gap: theme.spacing.lg,
+    backgroundColor: theme.colors.surface,
     borderWidth: 1,
-    borderColor: '#E8EEF4',
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderColor: theme.colors.border,
+    borderRadius: theme.radius.card,
+    padding: theme.spacing.lg,
   },
-  accountDetailCopy: {
-    flex: 1,
-  },
-  accountDetailLabel: {
-    color: '#64748B',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  accountDetailValue: {
-    color: '#111827',
-    fontSize: 12,
-    fontWeight: '800',
-    marginTop: 2,
-  },
-  syncDetailValue: {
-    color: '#35C94A',
-    fontSize: 11,
-    fontWeight: '800',
-    marginTop: 2,
-  },
-  profileCardTitle: {
-    color: '#1F2937',
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  profileCardText: {
-    color: '#4B5563',
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: 6,
-    fontWeight: '600',
-  },
-  profileHint: {
-    color: '#6B7280',
-    fontSize: 12,
-    lineHeight: 18,
-    marginTop: 10,
-  },
-  syncDetailBlock: {
-    marginTop: 4,
-    marginBottom: 18,
-  },
+  profileName: { ...theme.type.title, color: theme.colors.text },
   serverWakingNotice: {
-    marginHorizontal: 16,
-    marginBottom: 6,
-  },
-  syncStatusBanner: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 7,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginBottom: 16,
-  },
-  syncStatusBannerSuccess: {
-    backgroundColor: '#E9F9EE',
-    borderColor: '#A7F3D0',
-  },
-  syncStatusBannerError: {
-    backgroundColor: '#FFF1F0',
-    borderColor: '#FECACA',
-  },
-  syncStatusBannerPartial: {
-    backgroundColor: '#FFF7E5',
-    borderColor: '#FED7AA',
-  },
-  syncStatusBannerText: {
-    color: '#4B5563',
-    fontSize: 13,
-    fontWeight: '700',
-    lineHeight: 18,
-  },
-  syncStatusBannerTextSuccess: {
-    color: '#166534',
-  },
-  syncStatusBannerTextError: {
-    color: '#B42318',
-  },
-  syncStatusBannerTextPartial: {
-    color: '#B54708',
-  },
-  primaryProfileButton: {
-    backgroundColor: '#34C759',
-    marginTop: 14,
-    paddingVertical: 14,
-    borderRadius: 14,
-    alignItems: 'center',
-  },
-  primaryProfileButtonText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  syncIntroText: {
-    color: '#64748B',
-    fontSize: 12,
-    fontWeight: '700',
-    lineHeight: 18,
-    marginBottom: 16,
-    marginTop: 6,
-  },
-  syncClassList: {
-    gap: 12,
-    marginBottom: 18,
-  },
-  syncClassCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 7,
-    borderWidth: 1,
-    borderColor: '#DDE7EF',
-    paddingHorizontal: 14,
-    paddingVertical: 13,
-  },
-  syncClassCardDisabled: {
-    opacity: 0.62,
-  },
-  syncClassMainRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 10,
-  },
-  syncClassTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-  },
-  syncClassTitleBlock: {
-    flex: 1,
-    gap: 8,
-  },
-  syncClassTitle: {
-    color: '#111827',
-    fontSize: 14,
-    fontWeight: '900',
-  },
-  syncSubjectPill: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#EAFBF0',
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  syncSubjectPillText: {
-    color: '#0F7A34',
-    fontSize: 11,
-    fontWeight: '900',
-  },
-  syncStatusPill: {
-    minHeight: 24,
-    borderRadius: 12,
-    paddingHorizontal: 9,
-    backgroundColor: '#DDFBEA',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  syncStatusPillUnsynced: {
-    backgroundColor: '#FFF3E8',
-  },
-  syncStatusPillEmpty: {
-    backgroundColor: '#F1F5F9',
-  },
-  syncStatusPillText: {
-    color: '#16A34A',
-    fontSize: 10,
-    fontWeight: '900',
-  },
-  syncStatusPillTextUnsynced: {
-    color: '#F97316',
-  },
-  syncStatusPillTextEmpty: {
-    color: '#64748B',
-  },
-  syncClassMetaBlock: {
-    paddingLeft: 20,
-    marginTop: 10,
-    gap: 8,
-  },
-  syncClassMeta: {
-    color: '#475569',
-    fontSize: 11,
-    fontWeight: '700',
-    lineHeight: 16,
+    marginHorizontal: theme.screenPadding,
+    marginTop: theme.spacing.sm,
+    marginBottom: theme.spacing.sm,
   },
   syncInfoRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
-    minHeight: 20,
+    gap: theme.spacing.md,
+    paddingVertical: theme.spacing.xs,
   },
-  syncInfoLabel: {
-    color: '#64748B',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  syncInfoValue: {
-    flex: 1,
-    color: '#111827',
-    fontSize: 11,
-    fontWeight: '900',
-    textAlign: 'right',
-  },
-  syncAssessmentList: {
-    borderTopWidth: 1,
-    borderTopColor: '#EEF2F6',
-    paddingTop: 8,
-    gap: 2,
-  },
-  syncEmptyCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 7,
-    borderWidth: 1,
-    borderColor: '#DDE7EF',
-    padding: 18,
-    alignItems: 'center',
-  },
-  syncEmptyTitle: {
-    color: '#111827',
-    fontSize: 14,
-    fontWeight: '900',
-  },
-  syncEmptyText: {
-    color: '#64748B',
-    fontSize: 12,
-    fontWeight: '700',
-    textAlign: 'center',
-    marginTop: 6,
-  },
-  backHomeButton: {
-    backgroundColor: '#34C759',
-    minHeight: 48,
-    borderRadius: 7,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 7,
-    marginTop: 4,
-  },
-  secondaryProfileButton: {
-    backgroundColor: '#FFFFFF',
-    marginTop: 14,
-    paddingVertical: 14,
-    borderRadius: 14,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#34C759',
-  },
-  secondaryProfileButtonText: {
-    color: '#1E8E3E',
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  debugCard: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 18,
-    padding: 18,
-    marginBottom: 14,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  debugTitle: {
-    color: '#4B5563',
-    fontSize: 12,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: 10,
-  },
-  debugButton: {
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 14,
-    borderRadius: 14,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-  },
-  debugButtonText: {
-    color: '#4B5563',
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  clearLocalDataButton: {
-    marginTop: 12,
-    backgroundColor: '#FFF4F2',
-    borderWidth: 1,
-    borderColor: '#FF3B30',
-    paddingVertical: 14,
-    borderRadius: 14,
-    alignItems: 'center',
-  },
-  clearLocalDataText: {
-    color: '#FF3B30',
-    fontWeight: '800',
-    fontSize: 14,
-  },
-  logoutButton: {
-    backgroundColor: '#34C759',
-    paddingVertical: 15,
-    borderRadius: 7,
-    alignItems: 'center',
-    shadowColor: '#22C55E',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18,
-    shadowRadius: 12,
-    elevation: 5,
-  },
-  logoutText: {
-    color: '#FFFFFF',
-    fontWeight: '800',
-    fontSize: 15,
-  },
+  syncInfoLabel: { ...theme.type.caption, color: theme.colors.muted },
+  syncInfoValue: { ...theme.type.label, color: theme.colors.text, flexShrink: 1, textAlign: 'right' },
+  logoutButton: { marginTop: theme.spacing.lg },
+  tabScreen: { flex: 1, backgroundColor: theme.colors.bg },
+  tabContent: { padding: theme.screenPadding, paddingBottom: theme.spacing.xxxl, gap: theme.spacing.md },
+  flexOne: { flex: 1 },
+  cardTitle: { ...theme.type.cardTitle, color: theme.colors.text },
+  caption: { ...theme.type.caption, color: theme.colors.muted, marginTop: 2 },
+  profileEmail: { ...theme.type.body, color: theme.colors.muted, marginTop: 2 },
+  profileBadge: { marginTop: theme.spacing.sm },
+  aboutText: { ...theme.type.body, color: theme.colors.muted, marginTop: theme.spacing.xs },
+  syncCardHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: theme.spacing.md, marginBottom: theme.spacing.sm },
 });
 
 export default App;

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { V3OfflineDiagnosticSnapshot } from '../database/v3/diagnosticRepository';
 import {
@@ -16,7 +16,9 @@ import {
   type V3DiagnosticsConnectionAdapter,
 } from '../services/v3/diagnosticsConnection';
 import { V3SessionReauthenticationError } from '../services/v3/secureSessionService';
+import { theme } from '../theme/tokens';
 import { LoginLoading } from './LoginLoading';
+import { Banner, Button, ScreenHeader, TextField, useDialog } from './ui';
 
 interface V3LoginFlowProps {
   request: { email: string; password: string };
@@ -48,12 +50,14 @@ export const V3LoginFlow = ({
   // A ref, so a new callback from the parent does not restart the login effect.
   const accountRejected = useRef(onAccountRejected);
   accountRejected.current = onAccountRejected;
+  // Stable (the provider memoizes it), so it doesn't restart the login effect.
+  const dialog = useDialog();
 
   const showError = useCallback((cause: unknown) => {
     if (cause instanceof V3AccountNotAllowedError) {
       session.current = null;
       setChallenge(null);
-      Alert.alert(cause.title, cause.message, [{ text: 'OK' }]);
+      dialog.info({ title: cause.title, message: cause.message });
       accountRejected.current();
       return;
     }
@@ -62,7 +66,7 @@ export const V3LoginFlow = ({
       setChallenge(null);
     }
     setError(cause instanceof Error ? cause.message : 'Unable to sign in. Please try again.');
-  }, []);
+  }, [dialog]);
 
   const finishSignIn = useCallback(async (
     activeSession: V3AuthSession,
@@ -149,64 +153,67 @@ export const V3LoginFlow = ({
     }
   };
 
+  const title = challenge ? 'Verify your identity' : 'Unable to sign in';
   return (
     <Modal visible animationType="fade" onRequestClose={onClose}>
       <SafeAreaView style={styles.screen}>
         {isBusy || (!challenge && !error) ? <LoginLoading /> : (
-          <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-            <Text style={styles.title}>{challenge ? 'Verify your identity' : 'Unable to sign in'}</Text>
-            {challenge ? (
-              <>
-                <Text style={styles.description}>Enter your verification code for {challenge.emailMasked}.</Text>
-                {challenge.verificationMethods.length > 1 ? (
-                  <View style={styles.methods}>
-                    {challenge.verificationMethods.map(value => (
-                      <TouchableOpacity
-                        key={value}
-                        style={[styles.method, method === value && styles.selectedMethod]}
-                        accessibilityRole="button"
-                        accessibilityState={{ selected: method === value }}
-                        onPress={() => { setMethod(value); setCode(''); setError(null); }}
-                      >
-                        <Text style={styles.methodText}>{value === 'authenticator' ? 'Authenticator' : 'Recovery code'}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                ) : null}
-                <TextInput
-                  style={styles.input}
-                  accessibilityLabel="Verification code"
-                  placeholder={method === 'authenticator' ? '6-digit code' : 'Recovery code'}
-                  placeholderTextColor="#8B99AA"
-                  value={code}
-                  onChangeText={setCode}
-                  keyboardType={method === 'authenticator' ? 'number-pad' : 'default'}
-                  autoCapitalize={method === 'authenticator' ? 'none' : 'characters'}
-                  autoCorrect={false}
-                  onSubmitEditing={verifyMfa}
+          <>
+            <ScreenHeader title={title} onClose={onClose} />
+            <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+              {challenge ? (
+                <>
+                  <Text style={styles.description}>Enter your verification code for {challenge.emailMasked}.</Text>
+                  {challenge.verificationMethods.length > 1 ? (
+                    <View style={styles.methods}>
+                      {challenge.verificationMethods.map(value => (
+                        <Pressable
+                          key={value}
+                          style={({ pressed }) => [
+                            styles.method,
+                            method === value && styles.selectedMethod,
+                            pressed && method !== value && styles.pressedMethod,
+                          ]}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: method === value }}
+                          onPress={() => { setMethod(value); setCode(''); setError(null); }}
+                        >
+                          <Text style={[styles.methodText, method === value && styles.selectedMethodText]}>
+                            {value === 'authenticator' ? 'Authenticator' : 'Recovery code'}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  ) : null}
+                  <TextField
+                    label={method === 'authenticator' ? '6-digit code' : 'Recovery code'}
+                    accessibilityLabel="Verification code"
+                    placeholder={method === 'authenticator' ? '6-digit code' : 'Recovery code'}
+                    value={code}
+                    onChangeText={setCode}
+                    keyboardType={method === 'authenticator' ? 'number-pad' : 'default'}
+                    autoCapitalize={method === 'authenticator' ? 'none' : 'characters'}
+                    autoCorrect={false}
+                    textContentType="oneTimeCode"
+                    onSubmitEditing={verifyMfa}
+                  />
+                </>
+              ) : null}
+              {error ? <Banner tone="danger" message={error} /> : null}
+              {challenge ? (
+                <Button
+                  label="Verify"
+                  onPress={verifyMfa}
+                  disabled={!code.trim()}
+                  fullWidth
+                  accessibilityLabel="Verify and sign in"
                 />
-              </>
-            ) : null}
-            {error ? <Text style={styles.error} accessibilityRole="alert">{error}</Text> : null}
-            {challenge ? (
-              <TouchableOpacity
-                style={[styles.button, !code.trim() && styles.disabledButton]}
-                onPress={verifyMfa}
-                disabled={!code.trim()}
-                accessibilityRole="button"
-                accessibilityLabel="Verify and sign in"
-              >
-                <Text style={styles.buttonText}>Verify</Text>
-              </TouchableOpacity>
-            ) : session.current ? (
-              <TouchableOpacity style={styles.button} onPress={retryDownload} accessibilityRole="button" accessibilityLabel="Retry sign in">
-                <Text style={styles.buttonText}>Try again</Text>
-              </TouchableOpacity>
-            ) : null}
-            <TouchableOpacity style={styles.backButton} onPress={onClose} accessibilityRole="button" accessibilityLabel="Back to login">
-              <Text style={styles.backText}>Back to login</Text>
-            </TouchableOpacity>
-          </ScrollView>
+              ) : session.current ? (
+                <Button label="Try again" onPress={retryDownload} fullWidth accessibilityLabel="Retry sign in" />
+              ) : null}
+              <Button label="Back to login" variant="link" onPress={onClose} fullWidth accessibilityLabel="Back to login" />
+            </ScrollView>
+          </>
         )}
       </SafeAreaView>
     </Modal>
@@ -214,19 +221,24 @@ export const V3LoginFlow = ({
 };
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#FFFFFF' },
-  content: { flexGrow: 1, justifyContent: 'center', padding: 24, gap: 18 },
-  title: { fontSize: 23, fontWeight: '800', color: '#17261B', textAlign: 'center' },
-  description: { fontSize: 14, lineHeight: 21, color: '#64748B', textAlign: 'center' },
-  methods: { flexDirection: 'row', gap: 10 },
-  method: { flex: 1, padding: 12, borderWidth: 1, borderColor: '#DCE3E8', borderRadius: 8, alignItems: 'center' },
-  selectedMethod: { borderColor: '#20B94B', backgroundColor: '#EDF8F0' },
-  methodText: { color: '#43515C', fontSize: 13, fontWeight: '600' },
-  input: { minHeight: 52, borderWidth: 1, borderColor: '#CBD5DC', borderRadius: 8, paddingHorizontal: 16, fontSize: 18, color: '#17261B' },
-  error: { color: '#B42318', fontSize: 14, lineHeight: 21, textAlign: 'center' },
-  button: { minHeight: 50, backgroundColor: '#20B94B', borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  disabledButton: { opacity: 0.5 },
-  buttonText: { fontSize: 15, fontWeight: '700', color: '#FFFFFF' },
-  backButton: { minHeight: 44, alignItems: 'center', justifyContent: 'center' },
-  backText: { fontSize: 14, fontWeight: '600', color: '#64748B' },
+  screen: { flex: 1, backgroundColor: theme.colors.surface },
+  content: { flexGrow: 1, padding: theme.screenPadding, paddingTop: theme.spacing.xxl, gap: theme.spacing.lg },
+  description: { ...theme.type.body, color: theme.colors.textSecondary },
+  methods: { flexDirection: 'row', gap: theme.spacing.sm },
+  method: {
+    flex: 1,
+    minHeight: theme.touchTarget,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.borderStrong,
+    borderRadius: theme.radius.control,
+    backgroundColor: theme.colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  selectedMethod: { borderColor: theme.colors.primaryBorder, backgroundColor: theme.colors.primarySoft },
+  pressedMethod: { backgroundColor: theme.colors.surfaceSunken },
+  methodText: { ...theme.type.bodyStrong, color: theme.colors.textSecondary, textAlign: 'center' },
+  selectedMethodText: { color: theme.colors.primary },
 });
