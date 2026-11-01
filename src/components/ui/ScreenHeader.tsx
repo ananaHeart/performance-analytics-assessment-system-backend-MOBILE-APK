@@ -69,6 +69,14 @@ const styles = StyleSheet.create({
   copy: {flex: 1, paddingHorizontal: theme.spacing.xs, paddingVertical: theme.spacing.xs},
   title: {...theme.type.title, color: theme.colors.text},
   subtitle: {...theme.type.caption, color: theme.colors.muted, marginTop: 2},
-  right: {flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs, marginLeft: theme.spacing.xs},
+  // With the header's own xs padding, this keeps the right slot screenPadding
+  // (16) from the edge, in line with the cards below.
+  right: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.xs,
+    marginLeft: theme.spacing.xs,
+    paddingRight: theme.screenPadding - theme.spacing.xs,
+  },
   spinner: {marginHorizontal: theme.spacing.md},
 });

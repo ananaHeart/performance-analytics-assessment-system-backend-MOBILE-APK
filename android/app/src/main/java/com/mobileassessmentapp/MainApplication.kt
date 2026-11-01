@@ -1,6 +1,7 @@
 package com.mobileassessmentapp
 
 import android.app.Application
+import androidx.appcompat.app.AppCompatDelegate
 import com.facebook.react.PackageList
 import com.facebook.react.ReactApplication
 import com.facebook.react.ReactHost
@@ -25,6 +26,10 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onCreate() {
     super.onCreate()
+    // The app is light only. Without this, a phone in dark mode makes the
+    // full-screen modals (which draw under the system bars) switch to light
+    // navigation-bar icons, invisible on their white background.
+    AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
     loadReactNative(this)
   }
 }
