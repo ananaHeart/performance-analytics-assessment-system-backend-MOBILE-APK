@@ -470,6 +470,29 @@ export const saveV3AnswerSheetManifest = async (
 };
 
 /** The manifest saved at download time, or null if it was never downloaded. */
+/**
+ * ASM-7: after a download, forget cached manifests of answer-sheet versions
+ * the latest download no longer lists (deleted when the assessment was
+ * edited). A version an unsent result was scanned on is kept for its review.
+ */
+export const purgeStaleV3AnswerSheetManifests = (): void => {
+  getV3Database().execute(
+    `DELETE FROM answer_sheet_manifest_cache
+      WHERE answer_sheet_uuid NOT IN (
+              SELECT membership.entity_key
+                FROM download_snapshot_rows membership
+               WHERE membership.entity_name = 'answer_sheet_versions'
+                 AND membership.download_snapshot_id = (
+                   SELECT download_snapshot_id FROM download_snapshots
+                    WHERE snapshot_status = 'complete'
+                    ORDER BY committed_at DESC
+                    LIMIT 1))
+        AND answer_sheet_uuid NOT IN (
+              SELECT answer_sheet_uuid FROM dynamic_objective_outbox
+               WHERE stage <> 'finalized')`,
+  );
+};
+
 // Reused only while it still matches the downloaded answer sheet's manifest
 // hash; anything else (missing, or an answer sheet that no longer lists that
 // hash) returns null so the caller fetches it again.

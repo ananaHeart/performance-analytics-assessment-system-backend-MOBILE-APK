@@ -237,6 +237,25 @@ export const getV3DynamicObjectiveOutbox = (
   return row ? mapOutbox(row) : null;
 };
 
+/**
+ * Every scan file a result not yet finalized still needs (page images and
+ * written-answer crops). These must never be deleted: they are what gets sent.
+ */
+export const getV3DynamicScanFilesInUse = (): string[] =>
+  v3RowsToArray<OutboxRow>(getV3Database().execute(
+    "SELECT * FROM dynamic_objective_outbox WHERE stage <> 'finalized'",
+  )).map(mapOutbox).flatMap(record => [
+    ...record.pages.map(page => page.imageUri),
+    ...record.writtenAnswers.map(answer => answer.evidenceImageUri),
+  ]);
+
+/** Results of one assessment already finalized (ASM-7 rescore refresh). */
+export const getV3FinalizedDynamicResults = (testAssignmentId: number): V3DynamicObjectiveOutboxRecord[] =>
+  v3RowsToArray<OutboxRow>(getV3Database().execute(
+    "SELECT * FROM dynamic_objective_outbox WHERE test_assignment_id = ? AND stage = 'finalized'",
+    [testAssignmentId],
+  )).map(mapOutbox);
+
 /** True once any part of this result has reached the backend. */
 export const v3DynamicUploadStarted = (record: V3DynamicObjectiveOutboxRecord): boolean =>
   record.stage !== 'queued' || record.pages.some(page => page.uploaded);

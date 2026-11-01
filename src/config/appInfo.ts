@@ -1,6 +1,6 @@
 // Shown on the Profile tab's About card. Must match versionName in
 // android/app/build.gradle (__tests__/appVersion.test.ts checks this).
-export const APP_VERSION = '1.2';
+export const APP_VERSION = '1.2.1';
 
 export const APP_DISPLAY_NAME = 'Marka for Android';
 export const APP_CREDIT = 'A capstone project of Holy Trinity College of General Santos City';
@@ -9,5 +9,7 @@ export const APP_CREDIT = 'A capstone project of Holy Trinity College of General
 export const WEBSITE_BASE_URL = 'https://performance-analytic-assessment-system.onrender.com';
 export const USER_GUIDE_URL = `${WEBSITE_BASE_URL}/#guide`;
 export const PRIVACY_NOTICE_URL = `${WEBSITE_BASE_URL}/#privacy`;
+// TCH-7: the reset itself happens on the web (code to email or mobile).
+export const FORGOT_PASSWORD_URL = `${WEBSITE_BASE_URL}/#forgot-password`;
 export const SUPPORT_EMAIL = 'smartassessment.notifications@gmail.com';
 export const CONTACT_URL = `mailto:${SUPPORT_EMAIL}`;

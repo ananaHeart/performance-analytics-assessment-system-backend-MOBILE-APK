@@ -227,6 +227,25 @@ export const getV3ObjectiveCaptureContext = (
         AND sheet.generation_status = 'ready'
         AND page.page_status = 'ready'
         AND page.page_number = 1
+        -- ASM-7: a version the backend deleted (assessment edited) is no longer
+        -- in the latest download; never offer it for scanning.
+        AND EXISTS (
+          SELECT 1
+            FROM download_snapshot_rows membership
+           WHERE membership.entity_name = 'answer_sheet_versions'
+             AND membership.entity_key = sheet.answer_sheet_uuid
+             AND membership.download_snapshot_id = (
+               SELECT snapshot.download_snapshot_id
+                 FROM download_snapshots snapshot
+                 JOIN download_snapshot_rows assignment
+                   ON assignment.download_snapshot_id = snapshot.download_snapshot_id
+                  AND assignment.entity_name = 'test_assignments'
+                  AND assignment.entity_key = CAST(sheet.test_assignment_id AS TEXT)
+                WHERE snapshot.snapshot_status = 'complete'
+                ORDER BY snapshot.committed_at DESC
+                LIMIT 1
+             )
+        )
       ORDER BY sheet.generation_number DESC
       LIMIT 1`,
     [testAssignmentId],

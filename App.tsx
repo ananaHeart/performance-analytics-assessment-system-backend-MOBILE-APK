@@ -2147,16 +2147,11 @@ const AppContent = (): React.JSX.Element => {
           classData={selectedClass}
           onClose={() => setIsV3ObjectiveOpen(false)}
           onChanged={refreshData}
-          onSessionInvalid={() => {
-            setIsV3ObjectiveOpen(false);
-            setIsLoggedIn(false);
-            setTeacher(null);
-            setV3Session(null);
-            setView('LOGIN');
-            dialog.info({
-              title: 'Session Expired',
-              message: 'Sign in again. Saved V3 result operations remain on this phone.',
-            });
+          onSessionRenewed={(nextSession, nextSnapshot) => {
+            // SES-1: same teacher, fresh session - stay on the scan screen.
+            setV3Session(nextSession);
+            setV3Snapshot(nextSnapshot);
+            setTeacher((current: any) => current && {...current, token: nextSession.accessToken});
           }}
         />
       ) : null}

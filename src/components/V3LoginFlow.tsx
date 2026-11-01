@@ -6,6 +6,7 @@ import {
   requireV3TeacherLoginResult,
   requireV3TeacherSession,
   V3AccountNotAllowedError,
+  V3AuthHttpError,
   type V3AuthMfaChallenge,
   type V3AuthMfaMethod,
   type V3AuthSession,
@@ -19,6 +20,17 @@ import { V3SessionReauthenticationError } from '../services/v3/secureSessionServ
 import { theme } from '../theme/tokens';
 import { LoginLoading } from './LoginLoading';
 import { Banner, Button, ScreenHeader, TextField, useDialog } from './ui';
+
+// TCH-3 / TCH-9: accounts the principal has not approved, has deactivated or
+// archived, or whose contract ended. The backend's own message says why; the
+// title just names the situation. These are shown as a pop-up, not a field error.
+const ACCOUNT_STATUS_TITLES: Record<string, string> = {
+  ACCOUNT_PENDING_APPROVAL: 'Waiting for approval',
+  ACCOUNT_REJECTED: 'Registration rejected',
+  ACCOUNT_INACTIVE: 'Account inactive',
+  ACCOUNT_ARCHIVED: 'Account archived',
+  ACCOUNT_CONTRACT_ENDED: 'Contract ended',
+};
 
 interface V3LoginFlowProps {
   request: { email: string; password: string };
@@ -58,6 +70,19 @@ export const V3LoginFlow = ({
       session.current = null;
       setChallenge(null);
       dialog.info({ title: cause.title, message: cause.message });
+      accountRejected.current();
+      return;
+    }
+    const statusTitle = cause instanceof V3AuthHttpError && cause.code
+      ? ACCOUNT_STATUS_TITLES[cause.code]
+      : undefined;
+    if (statusTitle) {
+      session.current = null;
+      setChallenge(null);
+      dialog.info({
+        title: statusTitle,
+        message: (cause as V3AuthHttpError).message || 'Please contact the school principal.',
+      });
       accountRejected.current();
       return;
     }

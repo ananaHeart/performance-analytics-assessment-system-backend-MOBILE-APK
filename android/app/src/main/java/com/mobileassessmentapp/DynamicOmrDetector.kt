@@ -359,10 +359,6 @@ object DynamicOmrDetector {
         "Unable to create the dynamic scan evidence directory."
       }
 
-      val alignedFile = File(outputRoot, "page-${page.pageNumber.toString().padStart(2, '0')}-aligned.png")
-      require(Imgcodecs.imwrite(alignedFile.absolutePath, aligned)) {
-        "Unable to save the aligned page."
-      }
 
       val detections = mutableListOf<DynamicOmrDetection>()
       val writtenEvidence = mutableListOf<DynamicWrittenEvidence>()
@@ -539,7 +535,9 @@ object DynamicOmrDetector {
           manifestHash = manifest.manifestHash,
           paperSize = manifest.paperSize,
           sourceImageUri = Uri.fromFile(imageFile).toString(),
-          alignedImageUri = Uri.fromFile(alignedFile).toString(),
+          // The aligned page is only needed in memory for detection; it is no
+          // longer written to storage (several MB per page, never shown).
+          alignedImageUri = "",
           annotatedImageUri = Uri.fromFile(annotatedFile).toString(),
           originalPageSha256 = originalPageSha256,
           uploadImageUri = Uri.fromFile(uploadFile).toString(),

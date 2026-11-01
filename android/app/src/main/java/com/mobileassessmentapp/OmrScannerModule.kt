@@ -16,6 +16,7 @@ import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.WritableMap
 import java.io.File
@@ -297,12 +298,17 @@ class OmrScannerModule(
         reactContext.runOnUiQueueThread {
           pendingScan = null
           pending.promise.resolve(result)
+          // A dynamic scan uploads its own smaller copy (page-NN-upload.jpg), so
+          // the full camera photo (~2.4 MB) has no further use.
+          if (pending.dynamicMode) pending.imageFile.delete()
         }
       } catch (error: Exception) {
         logScanTime(pending, startedAt, detectStartedAt, "failed: ${error.message}")
         reactContext.runOnUiQueueThread {
           pendingScan = null
           pending.promise.reject("OMR_DETECTION_FAILED", error.message, error)
+          // Nothing was saved from a failed scan; the teacher scans again.
+          pending.imageFile.delete()
         }
       }
     }
@@ -332,11 +338,64 @@ class OmrScannerModule(
     }
   }
 
+  private fun scanRoot(): File = File(
+    reactContext.getExternalFilesDir(Environment.DIRECTORY_PICTURES),
+    "omr_scans",
+  )
+
+  // What one dynamic scan leaves on the phone: its dynamic_<time> folder (the
+  // upload copy, written-answer crops, review overlay) and possibly its raw
+  // omr_dynamic_* photo. Fixed-template and V2 scan files are never touched.
+  private fun isDynamicScanEntry(entry: File): Boolean =
+    (entry.isDirectory && entry.name.startsWith("dynamic_")) ||
+      (entry.isFile && entry.name.startsWith("omr_dynamic_"))
+
+  private fun sizeOf(entry: File): Long =
+    entry.walkBottomUp().filter { it.isFile }.sumOf { it.length() }
+
+  /** Every dynamic scan entry in omr_scans, with its size in bytes. */
+  @ReactMethod
+  fun listDynamicScanFiles(promise: Promise) {
+    try {
+      val entries = Arguments.createArray()
+      scanRoot().listFiles()?.filter(::isDynamicScanEntry)?.forEach { entry ->
+        entries.pushMap(Arguments.createMap().apply {
+          putString("uri", Uri.fromFile(entry).toString())
+          putDouble("bytes", sizeOf(entry).toDouble())
+        })
+      }
+      promise.resolve(entries)
+    } catch (error: Exception) {
+      promise.reject("OMR_FILE_LIST_FAILED", "Could not list the saved scans.", error)
+    }
+  }
+
+  /**
+   * Deletes the scan entry each URI belongs to: the whole dynamic_<time> folder
+   * for a file inside one, or the raw photo itself. Anything outside omr_scans,
+   * or not a dynamic scan, is ignored. Resolves with the bytes freed.
+   */
+  @ReactMethod
+  fun deleteDynamicScanFiles(uris: ReadableArray, promise: Promise) {
+    try {
+      val root = scanRoot().canonicalFile
+      var freed = 0L
+      for (index in 0 until uris.size()) {
+        val path = uris.getString(index)?.let { Uri.parse(it).path } ?: continue
+        val file = File(path).canonicalFile
+        val entry = if (file.parentFile == root) file else file.parentFile?.takeIf { it.parentFile == root }
+        if (entry == null || !entry.exists() || !isDynamicScanEntry(entry)) continue
+        val size = sizeOf(entry)
+        if (entry.deleteRecursively()) freed += size
+      }
+      promise.resolve(freed.toDouble())
+    } catch (error: Exception) {
+      promise.reject("OMR_FILE_DELETE_FAILED", "Could not delete the scan files.", error)
+    }
+  }
+
   private fun createImageFile(source: String): File {
-    val root = File(
-      reactContext.getExternalFilesDir(Environment.DIRECTORY_PICTURES),
-      "omr_scans",
-    )
+    val root = scanRoot()
     if (!root.exists() && !root.mkdirs()) {
       throw IllegalStateException("Unable to create the OMR scan directory.")
     }

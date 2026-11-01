@@ -1,10 +1,11 @@
 import React, { useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Linking, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { theme } from '../theme/tokens';
 import { LoginLoading } from './LoginLoading';
 import { MarkaMark } from './MarkaMark';
 import { Button, TextField, useDialog } from './ui';
+import { FORGOT_PASSWORD_URL } from '../config/appInfo';
 
 interface LoginScreenProps {
   onLogin: (email: string, password: string) => void | Promise<void>;
@@ -89,6 +90,17 @@ export const LoginScreen = ({
             loading={isSubmitting}
             fullWidth
             style={styles.button}
+          />
+          <Button
+            label="Forgot password?"
+            variant="link"
+            fullWidth
+            onPress={() => {
+              Linking.openURL(FORGOT_PASSWORD_URL).catch(() => dialog.info({
+                title: 'Forgot password?',
+                message: `Open ${FORGOT_PASSWORD_URL} on any browser to reset your password.`,
+              }));
+            }}
           />
         </View>
 

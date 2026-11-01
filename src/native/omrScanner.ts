@@ -50,6 +50,8 @@ interface OmrScannerNativeModule {
   captureAndDetect(options: OmrScanOptions): Promise<OmrScanResult>;
   chooseAndDetect(options: OmrScanOptions): Promise<OmrScanResult>;
   getFileSize(uri: string): Promise<number>;
+  listDynamicScanFiles(): Promise<{uri: string; bytes: number}[]>;
+  deleteDynamicScanFiles(uris: string[]): Promise<number>;
 }
 
 const getNativeScanner = (): OmrScannerNativeModule => {
@@ -73,3 +75,11 @@ export const chooseOmrImage = (options: OmrScanOptions): Promise<OmrScanResult> 
 
 export const getLocalFileSize = (uri: string): Promise<number> =>
   getNativeScanner().getFileSize(uri);
+
+/** Dynamic scan folders and raw photos on the phone, with their sizes. */
+export const listDynamicScanFiles = (): Promise<{uri: string; bytes: number}[]> =>
+  getNativeScanner().listDynamicScanFiles();
+
+/** Deletes the dynamic scan folder (or raw photo) of each URI; resolves with bytes freed. */
+export const deleteDynamicScanFiles = (uris: string[]): Promise<number> =>
+  getNativeScanner().deleteDynamicScanFiles(uris);

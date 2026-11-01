@@ -21,6 +21,7 @@ import {
   type V3WrittenAnswer,
 } from './dynamicVerificationClient';
 import {getLocalFileSize as fileSizeBytes} from '../../native/omrScanner';
+import {isOutdatedAnswerSheetError, OUTDATED_ANSWER_SHEET_MESSAGE} from './outdatedAnswerSheet';
 
 export interface V3DynamicObjectiveSyncResult {
   record: V3DynamicObjectiveOutboxRecord;
@@ -520,6 +521,9 @@ export const syncV3DynamicObjectiveResult = async (
     }
     return {record: current, officialScore: current.officialScore};
   } catch (error) {
+    if (isOutdatedAnswerSheetError(error) && error instanceof Error) {
+      error.message = OUTDATED_ANSWER_SHEET_MESSAGE;
+    }
     const message = friendlyErrorMessage(error) ?? (error instanceof Error ? error.message : 'V3 dynamic objective sync failed.');
     console.error('[V3 Dynamic Sync] FAILED', {
       stage: current.stage,

@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useMemo, useState} from 'react';
+import React, {createContext, useCallback, useContext, useEffect, useMemo, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
@@ -47,6 +48,7 @@ import {
 import type {V3AnswerSheetManifest, V3ManifestOptionCoordinate} from '../database/v3/contracts';
 import {
   getV3CachedAnswerSheetManifest,
+  purgeStaleV3AnswerSheetManifests,
   saveV3AnswerSheetManifest,
 } from '../database/v3/manifestRepository';
 import {purgeClosedV3EvaluationReferenceCache} from '../database/v3/evaluationReferenceCache';
@@ -61,7 +63,6 @@ import {buildDynamicScannerManifestJson} from '../services/v3/dynamicManifestAda
 import {V3_BASE_URL} from '../services/v3/diagnosticsConnection';
 import {createV3MobileReadClient} from '../services/v3/mobileReadClient';
 import {createV3OfflineDataService} from '../services/v3/offlineDataService';
-import {V3ObjectiveHttpError} from '../services/v3/objectiveClient';
 import {syncV3ObjectiveResult} from '../services/v3/objectiveSyncService';
 import {syncV3DynamicObjectiveResult} from '../services/v3/dynamicObjectiveSyncService';
 import {
@@ -77,6 +78,12 @@ import {
 import {computePreliminaryScore, type PreliminaryScore} from '../services/v3/preliminaryScore';
 import {V3ServerWakingNotice} from './V3ServerWakingNotice';
 import {V3StatusToast} from './V3StatusToast';
+import {SessionReloginSheet} from './SessionReloginSheet';
+import {isV3SessionExpired} from '../services/v3/sessionExpiry';
+import {isOutdatedAnswerSheetError, OUTDATED_ANSWER_SHEET_MESSAGE} from '../services/v3/outdatedAnswerSheet';
+import {refreshRescoredResults} from '../services/v3/rescoreRefresh';
+import type {V3OfflineDiagnosticSnapshot} from '../database/v3/diagnosticRepository';
+import {deleteScanFiles, sweepUnusedScanFiles} from '../services/v3/scanStorageCleanup';
 import {ScanningOverlay} from './ScanningOverlay';
 import {subscribeScanPhotoReady} from '../native/scanPhotoEvents';
 import {theme} from '../theme/tokens';
@@ -112,7 +119,8 @@ interface Props {
   classData: {class_id: number; grade_level_name?: string; section_name?: string};
   onClose: () => void;
   onChanged: () => void;
-  onSessionInvalid: () => void;
+  // SES-1: called after the teacher signs in again from the in-screen prompt.
+  onSessionRenewed: (session: V3AuthSession, snapshot: V3OfflineDiagnosticSnapshot) => void;
 }
 
 // Roster names arrive in whatever case the school's enrollment data used
@@ -128,6 +136,78 @@ const studentName = (student: V3ObjectiveStudent): string =>
 
 const scoreText = (value: number): string =>
   Number.isInteger(value) ? String(value) : String(Number(value.toFixed(2)));
+
+// How far below the top of the scroll area a focused point box is brought.
+const REVEAL_TOP_OFFSET = 96;
+
+const InputRevealContext = createContext<{
+  onFocus: (input: TextInput) => void;
+  onBlur: () => void;
+} | null>(null);
+
+/**
+ * The full-screen modals draw under the status and navigation bars, which
+ * also means Android no longer shrinks them when the keyboard opens. So when
+ * a point box gets focus, this scrolls it near the top of the screen, above
+ * where the keyboard sits, adding blank space at the end while it's focused
+ * so even the last box on the screen can get up there.
+ */
+const KeyboardSafeScrollView = ({children}: {children: React.ReactNode}) => {
+  const scrollRef = useRef<ScrollView>(null);
+  const contentRef = useRef<View>(null);
+  const pendingInput = useRef<TextInput | null>(null);
+  const spacerLaidOut = useRef(false);
+  // A count, not a flag: moving from one box to another blurs the first and
+  // focuses the second in the same batch, and the space should stay put.
+  const [focusedInputs, setFocusedInputs] = useState(0);
+  const {height} = useWindowDimensions();
+
+  const scrollToPendingInput = useCallback(() => {
+    const input = pendingInput.current;
+    const content = contentRef.current;
+    pendingInput.current = null;
+    if (!input || !content) return;
+    input.measureLayout(content, (_x, y) => {
+      scrollRef.current?.scrollTo({y: Math.max(0, y - REVEAL_TOP_OFFSET), animated: true});
+    });
+  }, []);
+
+  useEffect(() => {
+    if (focusedInputs === 0) spacerLaidOut.current = false;
+  }, [focusedInputs]);
+
+  const reveal = useMemo(() => ({
+    onFocus: (input: TextInput) => {
+      pendingInput.current = input;
+      setFocusedInputs(count => count + 1);
+      // Otherwise the spacer's first layout does the scroll.
+      if (spacerLaidOut.current) scrollToPendingInput();
+    },
+    onBlur: () => setFocusedInputs(count => Math.max(0, count - 1)),
+  }), [scrollToPendingInput]);
+
+  return (
+    <InputRevealContext.Provider value={reveal}>
+      <ScrollView
+        ref={scrollRef}
+        innerViewRef={contentRef as React.RefObject<View>}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        {children}
+        {focusedInputs > 0 ? (
+          <View
+            style={{height: height / 2}}
+            onLayout={() => {
+              spacerLaidOut.current = true;
+              scrollToPendingInput();
+            }}
+          />
+        ) : null}
+      </ScrollView>
+    </InputRevealContext.Provider>
+  );
+};
 
 /**
  * One rubric criterion's point entry: -/+ steppers by 1 plus a direct numeric
@@ -150,6 +230,8 @@ const CriterionScoreStepper = ({
   onChange: (value: number) => void;
 }) => {
   const [inputValue, setInputValue] = useState(value === null ? '' : scoreText(value));
+  const inputRef = useRef<TextInput>(null);
+  const reveal = useContext(InputRevealContext);
   useEffect(() => {
     setInputValue(value === null ? '' : scoreText(value));
   }, [value]);
@@ -175,10 +257,17 @@ const CriterionScoreStepper = ({
         disabled={disabled || value === 0}
       />
       <TextInput
+        ref={inputRef}
         style={[styles.criterionScoreInput, disabled && styles.inputDisabled]}
         value={inputValue}
         onChangeText={setInputValue}
-        onBlur={commit}
+        onFocus={() => {
+          if (inputRef.current) reveal?.onFocus(inputRef.current);
+        }}
+        onBlur={() => {
+          commit();
+          reveal?.onBlur();
+        }}
         editable={!disabled}
         keyboardType="decimal-pad"
         selectTextOnFocus
@@ -464,7 +553,7 @@ export const V3ObjectiveWorkflowModal = ({
   classData,
   onClose,
   onChanged,
-  onSessionInvalid,
+  onSessionRenewed,
 }: Props): React.JSX.Element => {
   const dialog = useDialog();
   const [students, setStudents] = useState<V3ObjectiveStudent[]>([]);
@@ -509,6 +598,19 @@ export const V3ObjectiveWorkflowModal = ({
     setError(text);
     setRetry(run ? {error: text, run} : null);
   };
+  // SES-1: the send waiting for the teacher to sign in again.
+  const [relogin, setRelogin] = useState<{run: () => void} | null>(null);
+  const sessionRef = useRef(session);
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
+  const handleSessionRenewed = (nextSession: V3AuthSession, snapshot: V3OfflineDiagnosticSnapshot) => {
+    sessionRef.current = nextSession;
+    onSessionRenewed(nextSession, snapshot);
+    const pending = relogin;
+    setRelogin(null);
+    pending?.run();
+  };
   const dismissMessage = useCallback(() => setMessage(null), []);
   const dismissError = useCallback(() => {
     setError(null);
@@ -538,6 +640,9 @@ export const V3ObjectiveWorkflowModal = ({
   // keys), then the local read above.
   const load = useCallback(async () => {
     await initV3Database();
+    // Opening the screen is a safe moment to free space: no scan is under
+    // review yet, so only finalized, discarded or never-saved scans go.
+    sweepUnusedScanFiles().catch(() => undefined);
     // Show what's already on the phone right away; a sleeping server can take
     // a minute or two to answer the download below.
     refreshLocal();
@@ -560,6 +665,14 @@ export const V3ObjectiveWorkflowModal = ({
     // The refresh above updates each assignment's capture availability, so
     // this is where cached answer keys for newly closed assessments go away.
     purgeClosedV3EvaluationReferenceCache();
+    purgeStaleV3AnswerSheetManifests();
+    // ASM-7: an answer-key correction rescores finalized results on the
+    // server. Best-effort: offline or slow, the phone keeps the last score.
+    refreshRescoredResults(test.test_assignment_id, sessionRef.current.accessToken)
+      .then(changed => {
+        if (changed) refreshLocal();
+      })
+      .catch(() => undefined);
     let reference: V3EvaluationReference | null = null;
     try {
       reference = await createV3DynamicVerificationClient(
@@ -576,7 +689,7 @@ export const V3ObjectiveWorkflowModal = ({
     }
     setEvaluationReference(reference);
     refreshLocal();
-  }, [refreshLocal, test.assignment_uuid, session.accessToken]);
+  }, [refreshLocal, test.assignment_uuid, test.test_assignment_id, session.accessToken]);
 
   useEffect(() => {
     if (!visible) {
@@ -756,7 +869,12 @@ export const V3ObjectiveWorkflowModal = ({
           const manifestEnvelope = await createV3MobileReadClient({
             baseUrl: V3_BASE_URL,
             getSessionToken: () => session.accessToken,
-          }).getAnswerSheetManifest(test.assignment_uuid, context.answerSheetUuid);
+          }).getAnswerSheetManifest(test.assignment_uuid, context.answerSheetUuid)
+            .catch(manifestError => {
+              throw isOutdatedAnswerSheetError(manifestError)
+                ? new Error(OUTDATED_ANSWER_SHEET_MESSAGE)
+                : manifestError;
+            });
           await saveV3AnswerSheetManifest(manifestEnvelope.data);
           manifest = manifestEnvelope.data;
         }
@@ -818,8 +936,14 @@ export const V3ObjectiveWorkflowModal = ({
       if ((scanError as {code?: unknown} | null)?.code === 'OMR_SCAN_CANCELLED') {
         setMessage('Scan cancelled.');
       } else {
+        const scanMessage = scanError instanceof Error ? scanError.message : 'Unable to scan the answer sheet.';
         showError(
-          scanError instanceof Error ? scanError.message : 'Unable to scan the answer sheet.',
+          // ASM-7: a copy printed before the assessment was edited carries the
+          // old answer-sheet identity.
+          /does not match the selected answer sheet/i.test(scanMessage)
+            ? "This sheet doesn't match the current answer sheet. If it was printed before the "
+              + 'assessment was edited, download again and print the latest sheet.'
+            : scanMessage,
           () => runScan(source),
         );
         setMessage(null);
@@ -878,7 +1002,7 @@ export const V3ObjectiveWorkflowModal = ({
       setMessage('Sending to the web...');
       const result = await syncV3ObjectiveResult(
         V3_BASE_URL,
-        session.accessToken,
+        sessionRef.current.accessToken,
         record,
       );
       setMessage(
@@ -888,9 +1012,11 @@ export const V3ObjectiveWorkflowModal = ({
       refreshLocal();
       onChanged();
     } catch (syncError) {
-      if (syncError instanceof V3ObjectiveHttpError && syncError.status === 401) {
-        onSessionInvalid();
-        return;
+      if (isV3SessionExpired(syncError)) {
+        // SES-1: not a failed result - ask for a sign-in, then send again.
+        setMessage(null);
+        setRelogin({run: () => syncRecord(student)});
+        return 'session_expired' as const;
       }
       showError(
         `${syncError instanceof Error ? syncError.message : 'Unable to send the result.'}\n`
@@ -983,9 +1109,15 @@ export const V3ObjectiveWorkflowModal = ({
       setMessage('Sending to the web...');
       const result = await syncV3DynamicObjectiveResult(
         V3_BASE_URL,
-        session.accessToken,
+        sessionRef.current.accessToken,
         record,
       );
+      // Sent and finalized: the server has the images, so the phone's copies
+      // have no further use.
+      deleteScanFiles([
+        ...result.record.pages.map(page => page.imageUri),
+        ...result.record.writtenAnswers.map(answer => answer.evidenceImageUri),
+      ]).catch(() => undefined);
       setMessage(
         `Sent. Official score: ${result.officialScore.totalScore}/${result.officialScore.maxScore} (${result.officialScore.percentage}%).`,
       );
@@ -995,9 +1127,11 @@ export const V3ObjectiveWorkflowModal = ({
       refreshLocal();
       onChanged();
     } catch (syncError) {
-      if (syncError instanceof V3ObjectiveHttpError && syncError.status === 401) {
-        onSessionInvalid();
-        return;
+      if (isV3SessionExpired(syncError)) {
+        // SES-1: not a failed result - ask for a sign-in, then send again.
+        setMessage(null);
+        setRelogin({run: () => syncDynamicRecord(student)});
+        return 'session_expired' as const;
       }
       showError(
         `${syncError instanceof Error ? syncError.message : 'Unable to send the result.'}\n`
@@ -1037,7 +1171,14 @@ export const V3ObjectiveWorkflowModal = ({
       destructive: true,
       onConfirm: () => {
         if (isDynamicTemplate) {
+          const discarded = getV3DynamicObjectiveOutbox(test.test_assignment_id, student.classListId);
           deleteV3DynamicObjectiveOutbox(test.test_assignment_id, student.classListId);
+          if (discarded) {
+            deleteScanFiles([
+              ...discarded.pages.map(page => page.imageUri),
+              ...discarded.writtenAnswers.map(answer => answer.evidenceImageUri),
+            ]).catch(() => undefined);
+          }
         } else {
           deleteV3ObjectiveOutbox(test.test_assignment_id, student.classListId);
         }
@@ -1070,10 +1211,15 @@ export const V3ObjectiveWorkflowModal = ({
     if (queue.length === 0 || isBusy || bulkSync !== null) return;
     setBulkSync({total: queue.length, completed: 0, failed: []});
     for (const student of queue) {
-      if (isDynamicTemplate) {
-        await syncDynamicRecord(student);
-      } else {
-        await syncRecord(student);
+      const outcome = isDynamicTemplate
+        ? await syncDynamicRecord(student)
+        : await syncRecord(student);
+      if (outcome === 'session_expired') {
+        // Resume the whole batch after sign-in; already-sent students are
+        // skipped by the sync itself.
+        setBulkSync(null);
+        setRelogin({run: () => syncAllQueued()});
+        return;
       }
       const outbox = isDynamicTemplate
         ? getV3DynamicObjectiveOutbox(test.test_assignment_id, student.classListId)
@@ -1277,7 +1423,13 @@ export const V3ObjectiveWorkflowModal = ({
           icon={RefreshCw}
           variant="dangerOutline"
           style={styles.flexButton}
-          onPress={() => {setDynamicPages([]); setDynamicManifest(null); setWrittenScores({});}}
+          onPress={() => {
+            // Never saved, so nothing else refers to these pages' files.
+            deleteScanFiles(dynamicPages.map(page => page.annotatedImageUri)).catch(() => undefined);
+            setDynamicPages([]);
+            setDynamicManifest(null);
+            setWrittenScores({});
+          }}
           disabled={isBusy}
         />
       ) : null}
@@ -1297,7 +1449,18 @@ export const V3ObjectiveWorkflowModal = ({
   return (
     <>
     <ScanningOverlay photoUri={visible ? scanPhotoUri : null} />
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+    {/*
+      All three full-screen modals draw under the status and navigation bars
+      (otherwise Android shows them dimmed gray) and let the white SafeAreaView
+      fill them, matching the tab screens.
+    */}
+    <Modal
+      visible={visible}
+      animationType="slide"
+      statusBarTranslucent
+      navigationBarTranslucent
+      onRequestClose={onClose}
+    >
       <SafeAreaView style={styles.safeArea}>
         <ScreenHeader
           title={test.test_name || 'V3 Assessment'}
@@ -1496,6 +1659,8 @@ export const V3ObjectiveWorkflowModal = ({
     <Modal
       visible={showReview}
       animationType="slide"
+      statusBarTranslucent
+      navigationBarTranslucent
       onRequestClose={() => requestCloseReview()}
     >
       <SafeAreaView style={styles.safeArea}>
@@ -1510,7 +1675,7 @@ export const V3ObjectiveWorkflowModal = ({
         />
 
         <View style={styles.body}>
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <KeyboardSafeScrollView>
           {scan ? (
             <View>
               <Text style={styles.sectionTitle} accessibilityRole="header">Teacher verification</Text>
@@ -1686,7 +1851,7 @@ export const V3ObjectiveWorkflowModal = ({
             </View>
           ) : null}
 
-        </ScrollView>
+        </KeyboardSafeScrollView>
         {statusOverlay}
         </View>
 
@@ -1707,7 +1872,7 @@ export const V3ObjectiveWorkflowModal = ({
           isDynamicCaptureComplete ? (
             <StickyFooter
               hint={writtenRemaining > 0
-                ? `Score every written-response item above before sending - ${writtenRemaining} remaining.`
+                ? `Score the written-response items above to save this result. ${writtenRemaining} remaining.`
                 : null}
             >
               <Button
@@ -1740,6 +1905,8 @@ export const V3ObjectiveWorkflowModal = ({
     <Modal
       visible={editing !== null}
       animationType="slide"
+      statusBarTranslucent
+      navigationBarTranslucent
       onRequestClose={requestCloseEdit}
     >
       <SafeAreaView style={styles.safeArea}>
@@ -1754,7 +1921,7 @@ export const V3ObjectiveWorkflowModal = ({
         />
 
         <View style={styles.body}>
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <KeyboardSafeScrollView>
           <PreliminaryScoreBanner score={editingPreliminary} />
           <Text style={styles.verificationHint}>
             Multiple Choice and True/False marks can't be changed here. If one was misread, go back
@@ -1780,7 +1947,7 @@ export const V3ObjectiveWorkflowModal = ({
                 }))}
               />
             ))}
-        </ScrollView>
+        </KeyboardSafeScrollView>
         {statusOverlay}
         </View>
 
@@ -1795,6 +1962,15 @@ export const V3ObjectiveWorkflowModal = ({
         </StickyFooter>
       </SafeAreaView>
     </Modal>
+    <SessionReloginSheet
+      visible={relogin !== null}
+      email={session.user.email}
+      onRenewed={handleSessionRenewed}
+      onCancel={() => {
+        setRelogin(null);
+        setMessage('Not sent yet. Your results are still saved on this phone.');
+      }}
+    />
     </>
   );
 };
