@@ -280,6 +280,9 @@ export const V3_DRAFT_SCHEMA_STATEMENTS = [
     ),
     allow_late_capture INTEGER NOT NULL CHECK (allow_late_capture IN (0, 1)),
     capture_allowed_now INTEGER NOT NULL CHECK (capture_allowed_now IN (0, 1)),
+    -- Mobile only (R2-9): the answer sheet the teacher last acknowledged on
+    -- this phone. Never sent by the download, so upserts leave it alone.
+    acknowledged_answer_sheet_uuid TEXT,
     capture_availability TEXT NOT NULL CHECK (
       capture_availability IN (
         'planned', 'scheduled', 'open', 'closed', 'late_allowed', 'archived'

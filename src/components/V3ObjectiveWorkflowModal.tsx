@@ -26,6 +26,8 @@ import {
 import {initV3Database} from '../database/v3/database';
 import {
   deleteV3ObjectiveOutbox,
+  acknowledgeV3AnswerSheet,
+  getV3AnswerSheetChanged,
   getV3ObjectiveCaptureContext,
   getV3ObjectiveOutbox,
   getV3ObjectiveRegions,
@@ -709,6 +711,14 @@ export const V3ObjectiveWorkflowModal = ({
       loadError instanceof Error ? loadError.message : 'Unable to read the V3 offline workflow.',
     ));
   }, [load, visible]);
+
+  // R2-9: the answer sheet changed since the teacher last saw it here.
+  const [answerSheetChanged, setAnswerSheetChanged] = useState(false);
+  useEffect(() => {
+    setAnswerSheetChanged(context
+      ? getV3AnswerSheetChanged(test.test_assignment_id, context.answerSheetUuid)
+      : false);
+  }, [context, test.test_assignment_id]);
 
   const isDynamicTemplate = context ? context.templateCode !== FIXED_MC_TEMPLATE_CODE : false;
 
@@ -1485,6 +1495,24 @@ export const V3ObjectiveWorkflowModal = ({
 
         <View style={styles.body}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          {answerSheetChanged && !eligibilityIssue ? (
+            <Banner
+              tone="warning"
+              title="This assessment was updated"
+              message={'Its answer sheet changed (parts or items were added or removed). Download the '
+                + 'latest version and print the new answer sheet from the web before scanning. Sheets '
+                + 'printed before the update cannot be scanned.'}
+              action={{
+                label: 'Got it',
+                onPress: () => {
+                  if (context) acknowledgeV3AnswerSheet(test.test_assignment_id, context.answerSheetUuid);
+                  setAnswerSheetChanged(false);
+                },
+              }}
+              style={styles.sectionSpacing}
+            />
+          ) : null}
+
           {eligibilityIssue ? (
             <Banner tone="warning" title="Answer sheet not ready" style={styles.sectionSpacing}>
               <Text style={styles.bannerText}>{eligibilityIssue}</Text>

@@ -21,15 +21,35 @@ import { theme } from '../theme/tokens';
 import { LoginLoading } from './LoginLoading';
 import { Banner, Button, ScreenHeader, TextField, useDialog } from './ui';
 
-// TCH-3 / TCH-9: accounts the principal has not approved, has deactivated or
-// archived, or whose contract ended. The backend's own message says why; the
-// title just names the situation. These are shown as a pop-up, not a field error.
-const ACCOUNT_STATUS_TITLES: Record<string, string> = {
-  ACCOUNT_PENDING_APPROVAL: 'Waiting for approval',
-  ACCOUNT_REJECTED: 'Registration rejected',
-  ACCOUNT_INACTIVE: 'Account inactive',
-  ACCOUNT_ARCHIVED: 'Account archived',
-  ACCOUNT_CONTRACT_ENDED: 'Contract ended',
+// TCH-3 / TCH-9 / R2-6: the backend checks these only after the password
+// matched, so they never reach the teacher as "Invalid email or password".
+// Each code gets its own title and wording; the contract message keeps the
+// backend's text because it carries the end date.
+const ACCOUNT_STATUS_MESSAGES: Record<string, { title: string; message: string | null }> = {
+  ACCOUNT_PENDING_APPROVAL: {
+    title: 'Waiting for approval',
+    message: 'Your account is verified, but the principal has not approved it yet. Please try again once it is approved.',
+  },
+  ACCOUNT_REJECTED: {
+    title: 'Registration rejected',
+    message: 'The principal rejected this registration. Please contact the principal.',
+  },
+  ACCOUNT_INACTIVE: {
+    title: 'Account inactive',
+    message: 'This account has been deactivated. Please contact the principal to restore access.',
+  },
+  ACCOUNT_ARCHIVED: {
+    title: 'Account archived',
+    message: 'This account is archived. Please contact the principal to restore access.',
+  },
+  ACCOUNT_LOCKED: {
+    title: 'Account locked',
+    message: 'This account is locked. Please contact the principal.',
+  },
+  ACCOUNT_CONTRACT_ENDED: {
+    title: 'Contract ended',
+    message: null,
+  },
 };
 
 interface V3LoginFlowProps {
@@ -73,15 +93,16 @@ export const V3LoginFlow = ({
       accountRejected.current();
       return;
     }
-    const statusTitle = cause instanceof V3AuthHttpError && cause.code
-      ? ACCOUNT_STATUS_TITLES[cause.code]
+    const accountStatus = cause instanceof V3AuthHttpError && cause.code
+      ? ACCOUNT_STATUS_MESSAGES[cause.code]
       : undefined;
-    if (statusTitle) {
+    if (accountStatus) {
       session.current = null;
       setChallenge(null);
       dialog.info({
-        title: statusTitle,
-        message: (cause as V3AuthHttpError).message || 'Please contact the school principal.',
+        title: accountStatus.title,
+        message: accountStatus.message
+          ?? ((cause as V3AuthHttpError).message || 'Please contact the principal.'),
       });
       accountRejected.current();
       return;

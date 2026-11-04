@@ -6,6 +6,7 @@ import { V3LoginFlow } from '../src/components/V3LoginFlow';
 import type { V3OfflineDiagnosticSnapshot } from '../src/database/v3/diagnosticRepository';
 import {
   V3AccountNotAllowedError,
+  V3AuthHttpError,
   type V3AuthLoginResult,
   type V3AuthSession,
 } from '../src/services/v3/authClient';
@@ -247,6 +248,22 @@ describe('V3 login loading flow', () => {
         [{ text: 'OK' }],
       );
       expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    // R2-6: the backend's account codes (sent only after the password matched)
+    // each get their own message - never "Invalid email or password".
+    test.each([
+      ['ACCOUNT_ARCHIVED', 'Account archived', 'This account is archived. Please contact the principal to restore access.'],
+      ['ACCOUNT_INACTIVE', 'Account inactive', 'This account has been deactivated. Please contact the principal to restore access.'],
+      ['ACCOUNT_REJECTED', 'Registration rejected', 'The principal rejected this registration. Please contact the principal.'],
+      ['ACCOUNT_PENDING_APPROVAL', 'Waiting for approval', 'Your account is verified, but the principal has not approved it yet. Please try again once it is approved.'],
+      ['ACCOUNT_CONTRACT_ENDED', 'Contract ended', 'Backend text with the date.'],
+    ])('shows a clear pop-up for %s', async (code, title, message) => {
+      adapter.login.mockRejectedValue(new V3AuthHttpError(403, 'Backend text with the date.', code, { code }));
+      await renderWithRejection();
+      expect(alert).toHaveBeenCalledWith(title, message, [{ text: 'OK' }]);
+      expect(onAccountRejected).toHaveBeenCalledTimes(1);
+      expect(screenText()).not.toMatch(/Invalid email or password/);
     });
   });
 

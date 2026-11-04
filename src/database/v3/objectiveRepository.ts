@@ -206,6 +206,36 @@ export const getV3ObjectiveStudents = (
   officialScore: parseScore(row.official_score_json),
 }));
 
+/**
+ * R2-9: whether this assessment's answer sheet changed since the teacher last
+ * saw it on this phone (parts or items added or removed create a new answer
+ * sheet; an answer-key-only change does not). The first time an assessment is
+ * opened, its current sheet is simply recorded.
+ */
+export const getV3AnswerSheetChanged = (
+  testAssignmentId: number,
+  currentAnswerSheetUuid: string,
+): boolean => {
+  const database = getV3Database();
+  const row = v3RowsToArray<{acknowledged_answer_sheet_uuid: string | null}>(database.execute(
+    'SELECT acknowledged_answer_sheet_uuid FROM test_assignments WHERE test_assignment_id = ?',
+    [testAssignmentId],
+  ))[0];
+  if (!row) return false;
+  if (!row.acknowledged_answer_sheet_uuid) {
+    acknowledgeV3AnswerSheet(testAssignmentId, currentAnswerSheetUuid);
+    return false;
+  }
+  return row.acknowledged_answer_sheet_uuid !== currentAnswerSheetUuid;
+};
+
+export const acknowledgeV3AnswerSheet = (testAssignmentId: number, answerSheetUuid: string): void => {
+  getV3Database().execute(
+    'UPDATE test_assignments SET acknowledged_answer_sheet_uuid = ? WHERE test_assignment_id = ?',
+    [answerSheetUuid, testAssignmentId],
+  );
+};
+
 export const getV3ObjectiveCaptureContext = (
   testAssignmentId: number,
 ): V3ObjectiveCaptureContext | null => {

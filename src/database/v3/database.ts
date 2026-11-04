@@ -74,6 +74,15 @@ const patchDynamicObjectiveOutboxWrittenVerificationUuids = (transaction: Transa
   });
 };
 
+// R2-9: installs created before the column existed get it added (nullable,
+// so existing rows simply start with no acknowledged answer sheet).
+const patchAcknowledgedAnswerSheetColumn = (transaction: Transaction): void => {
+  const columns = v3RowsToArray<{name: string}>(transaction.execute('PRAGMA table_info(test_assignments)'));
+  if (!columns.some(column => column.name === 'acknowledged_answer_sheet_uuid')) {
+    transaction.execute('ALTER TABLE test_assignments ADD COLUMN acknowledged_answer_sheet_uuid TEXT');
+  }
+};
+
 const TESTS_CHILD_TABLES = ['test_assignments', 'test_parts'] as const;
 
 const countTestsLinkViolations = (execute: (sql: string) => QueryResult): number =>
@@ -158,6 +167,7 @@ export const initV3Database = async (): Promise<void> => {
       transaction.execute(statement),
     );
     patchDynamicObjectiveOutboxWrittenVerificationUuids(transaction);
+    patchAcknowledgedAnswerSheetColumn(transaction);
     transaction.execute(
       `INSERT INTO schema_versions (
          schema_version_id, version_number, contract_version, applied_at
