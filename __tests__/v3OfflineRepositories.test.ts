@@ -194,9 +194,19 @@ describe('V3 isolated reference and download persistence', () => {
     expect(referenceResult.questionTypeCount).toBe(5);
     expect(downloadResult.status).toBe('committed');
     expect(downloadResult.entityCounts.answer_sheet_versions).toBe(1);
-    expect(mockStatements.some(item => /DELETE\s+FROM/i.test(item.sql))).toBe(
-      false,
-    );
+    // A download may remove only test structure the backend replaced when an
+    // assessment was edited (ASM-7) - never saved scans, results or outboxes.
+    const deletedTables = mockStatements
+      .map(item => /DELETE\s+FROM\s+(\w+)/i.exec(item.sql)?.[1])
+      .filter((table): table is string => Boolean(table));
+    deletedTables.forEach(table => expect([
+      'answer_sheet_versions',
+      'answer_sheet_regions',
+      'question_options',
+      'part_skill_mappings',
+      'questions',
+      'test_parts',
+    ]).toContain(table));
 
     const sqliteProbe = spawnSync('sqlite3', ['-version'], {
       encoding: 'utf8',

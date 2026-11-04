@@ -387,6 +387,84 @@ const requirePaperSizeId = (
   return Number(row.id);
 };
 
+const sqlList = (values: Array<number | string>): string =>
+  values.length > 0 ? values.map(() => '?').join(', ') : 'NULL';
+
+/**
+ * ASM-7: a teacher can now edit an ACTIVE assessment. The backend then
+ * replaces its parts, questions and answer-sheet versions with new rows (new
+ * ids, often the same part order and item numbers). A download only adds and
+ * updates rows, so the phone's old copies stayed and the new ones collided
+ * with them (UNIQUE test_id/part_order), failing the whole download.
+ *
+ * For every test in this download, rows the backend no longer has are removed
+ * (children first), and the positions of rows that remain are moved out of
+ * the way so the upserts below can renumber them. Only structure is touched:
+ * saved results live in the outbox tables, which have no links to these rows.
+ */
+const reconcileEditedTests = (transaction: Transaction, payload: V3MobileDownload): void => {
+  const tests = payload.tests.map(item => item.testId);
+  if (tests.length === 0) return;
+  const assignments = payload.testAssignments.map(item => item.testAssignmentId);
+  const sheets = payload.answerSheets.map(item => item.answerSheetUuid);
+  const parts = payload.testParts.map(item => item.testPartId);
+  const questions = payload.questions.map(item => item.questionId);
+  const options = payload.questionOptions.map(item => item.questionOptionId);
+  const mappings = payload.partSkillMappings.map(item => item.partSkillMappingId);
+
+  const partsOfTests = `SELECT test_part_id FROM test_parts WHERE test_id IN (${sqlList(tests)})`;
+  const questionsOfTests = `SELECT question_id FROM questions WHERE test_part_id IN (${partsOfTests})`;
+  const run = (sql: string, params: Array<number | string>) => transaction.execute(sql, params);
+
+  run(
+    `DELETE FROM answer_sheet_versions
+      WHERE test_assignment_id IN (${sqlList(assignments)})
+        AND answer_sheet_uuid NOT IN (${sqlList(sheets)})`,
+    [...assignments, ...sheets],
+  );
+  run(
+    `DELETE FROM answer_sheet_regions
+      WHERE test_part_id IN (${partsOfTests} AND test_part_id NOT IN (${sqlList(parts)}))
+         OR question_id IN (${questionsOfTests} AND question_id NOT IN (${sqlList(questions)}))`,
+    [...tests, ...parts, ...tests, ...questions],
+  );
+  run(
+    `DELETE FROM question_options
+      WHERE question_id IN (${questionsOfTests})
+        AND question_option_id NOT IN (${sqlList(options)})`,
+    [...tests, ...options],
+  );
+  run(
+    `DELETE FROM part_skill_mappings
+      WHERE test_part_id IN (${partsOfTests})
+        AND part_skill_mapping_id NOT IN (${sqlList(mappings)})`,
+    [...tests, ...mappings],
+  );
+  run(
+    `DELETE FROM questions
+      WHERE test_part_id IN (${partsOfTests})
+        AND question_id NOT IN (${sqlList(questions)})`,
+    [...tests, ...questions],
+  );
+  run(
+    `DELETE FROM test_parts
+      WHERE test_id IN (${sqlList(tests)})
+        AND test_part_id NOT IN (${sqlList(parts)})`,
+    [...tests, ...parts],
+  );
+  // Kept rows may have been reordered; park their positions above any real
+  // value so renumbering them below can't collide. The upserts restore them.
+  run(`UPDATE test_parts SET part_order = part_order + 100000 WHERE test_id IN (${sqlList(tests)})`, tests);
+  run(
+    `UPDATE questions SET item_number = item_number + 100000 WHERE test_part_id IN (${partsOfTests})`,
+    tests,
+  );
+  run(
+    `UPDATE question_options SET option_order = option_order + 100000 WHERE question_id IN (${questionsOfTests})`,
+    tests,
+  );
+};
+
 const writeDownloadRows = (
   transaction: Transaction,
   payload: V3MobileDownload,
@@ -555,6 +633,8 @@ const writeDownloadRows = (
       ['test_assignment_id'],
     ),
   );
+
+  reconcileEditedTests(transaction, payload);
 
   payload.testParts.forEach(item =>
     upsertV3Row(
